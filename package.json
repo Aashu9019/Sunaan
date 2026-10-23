@@ -5,7 +5,8 @@
     "setup": "npm install && cd server && npm install && cd ../web && npm install",
     "dev": "concurrently -n server,web -c yellow,cyan \"npm run dev --prefix server\" \"npm run dev --prefix web\"",
     "build": "npm run build --prefix web",
-    "start": "npm start --prefix server"
+    "start": "npm start --prefix server",
+    "share": "npm run build && node scripts/share.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

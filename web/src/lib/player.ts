@@ -1,5 +1,6 @@
 import { createStore } from './store';
 import { getAudio, type Track } from './db';
+import { pushHistory } from './history';
 
 export type Action =
   | { type: 'setQueue'; queue: Track[]; index: number }
@@ -11,7 +12,8 @@ export type Action =
   | { type: 'prev' }
   | { type: 'enqueue'; track: Track }
   | { type: 'remove'; index: number }
-  | { type: 'ended'; index: number };
+  | { type: 'ended'; index: number }
+  | { type: 'reorder'; queue: Track[] }; // same tracks, new order, current keeps playing
 
 export type RoomState = {
   code: string;
@@ -32,7 +34,36 @@ export const player = createStore({
   buffering: false,
   needsTap: false, // iOS blocked autoplay; user must tap once
   error: null as string | null,
+  repeat: (localStorage.getItem('groove:repeat') || 'off') as 'off' | 'all' | 'one',
+  shuffle: false,
 });
+
+export function cycleRepeat() {
+  const next = ({ off: 'all', all: 'one', one: 'off' } as const)[player.get().repeat];
+  localStorage.setItem('groove:repeat', next);
+  player.set({ repeat: next });
+}
+
+let unshuffled: Track[] | null = null;
+
+export function toggleShuffle() {
+  const { queue, index, shuffle } = player.get();
+  const cur = queue[index];
+  if (!cur) return;
+  if (!shuffle) {
+    unshuffled = queue;
+    const rest = queue.filter((_, i) => i !== index);
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    dispatch({ type: 'reorder', queue: [cur, ...rest] });
+  } else if (unshuffled) {
+    const ids = new Set(queue.map((t) => t.id));
+    dispatch({ type: 'reorder', queue: unshuffled.filter((t) => ids.has(t.id)) });
+  }
+  player.set({ shuffle: !shuffle });
+}
 
 export const audio = new Audio();
 audio.preload = 'auto';
@@ -52,6 +83,7 @@ async function load(t: Track) {
   audio.src = objectUrl ?? `/api/stream/${t.id}`;
   player.set({ time: 0, duration: t.duration, error: null });
   setMediaSession(t);
+  pushHistory(t);
 }
 
 function whenReady() {
@@ -117,6 +149,12 @@ async function local(a: Action) {
     case 'seek':
       audio.currentTime = a.time;
       return;
+    case 'reorder': {
+      const cur = queue[index];
+      const i = cur ? a.queue.findIndex((t) => t.id === cur.id) : -1;
+      player.set({ queue: a.queue, index: Math.max(0, i) });
+      return;
+    }
     case 'next':
     case 'ended':
       if (index < queue.length - 1) {
@@ -219,7 +257,22 @@ setInterval(() => {
 
 // ---------- audio events ----------
 
-audio.addEventListener('timeupdate', () => player.set({ time: audio.currentTime }));
+let lastPosition = 0;
+audio.addEventListener('timeupdate', () => {
+  player.set({ time: audio.currentTime });
+  // keeps the notification / lock screen seek bar in step
+  if ('mediaSession' in navigator && Date.now() - lastPosition > 1000 && Number.isFinite(audio.duration)) {
+    lastPosition = Date.now();
+    try {
+      navigator.mediaSession.setPositionState({ duration: audio.duration, position: Math.min(audio.currentTime, audio.duration), playbackRate: 1 });
+    } catch {}
+  }
+});
+const setPlaybackState = (s: MediaSessionPlaybackState) => {
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = s;
+};
+audio.addEventListener('play', () => setPlaybackState('playing'));
+audio.addEventListener('pause', () => setPlaybackState('paused'));
 audio.addEventListener('durationchange', () => {
   if (Number.isFinite(audio.duration)) player.set({ duration: audio.duration });
 });
@@ -228,7 +281,14 @@ audio.addEventListener('pause', () => player.set({ playing: false }));
 audio.addEventListener('waiting', () => player.set({ buffering: true }));
 audio.addEventListener('playing', () => player.set({ buffering: false }));
 audio.addEventListener('canplay', () => player.set({ buffering: false }));
-audio.addEventListener('ended', () => dispatch({ type: 'ended', index: player.get().index }));
+audio.addEventListener('ended', () => {
+  const { repeat, index, queue } = player.get();
+  if (repeat === 'one') {
+    dispatch({ type: 'seek', time: 0 });
+    if (!remote) play();
+  } else if (repeat === 'all' && index >= queue.length - 1 && queue.length) dispatch({ type: 'playIndex', index: 0 });
+  else dispatch({ type: 'ended', index });
+});
 audio.addEventListener('error', () => {
   if (audio.src) player.set({ error: navigator.onLine ? "Can't play" : 'Offline', buffering: false });
 });
@@ -289,5 +349,7 @@ if ('mediaSession' in navigator) {
   ms.setActionHandler('previoustrack', () => dispatch({ type: 'prev' }));
   try {
     ms.setActionHandler('seekto', (d) => d.seekTime != null && dispatch({ type: 'seek', time: d.seekTime }));
+    ms.setActionHandler('seekbackward', (d) => dispatch({ type: 'seek', time: Math.max(0, audio.currentTime - (d.seekOffset || 10)) }));
+    ms.setActionHandler('seekforward', (d) => dispatch({ type: 'seek', time: audio.currentTime + (d.seekOffset || 10) }));
   } catch {}
 }

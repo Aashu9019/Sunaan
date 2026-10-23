@@ -22,6 +22,14 @@ npm run dev          # web on :5173, server on :3001
 
 Without `GROUP_KEY` the app is open. Without `DATABASE_URL`, group playlists are turned off and everything else still works.
 
+## Share from this PC (easiest)
+
+```bash
+npm run share
+```
+
+This builds the app, starts the server, and opens a free Cloudflare tunnel. It prints a public `https://....trycloudflare.com` link and the group key from `.env`. The link stays up while the PC is on and the command is running, and it changes each time you restart. YouTube works best this way because the traffic comes from your home connection.
+
 ## Deploy (Render + Neon)
 
 1. Create a Neon project and copy its connection string.

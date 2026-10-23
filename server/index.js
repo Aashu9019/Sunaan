@@ -90,6 +90,16 @@ const urlCache = new Map(); // videoId -> { at, p: Promise<string> }
 
 const thumb = (id) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
+// "Artist - Song (Official Video) [4K]" -> { artist: "Artist", title: "Song" }
+const NOISE = /\s*[([][^)\]]*(official|video|audio|lyric|visuali[sz]er|music|hd|4k|mv|full song|explicit)[^)\]]*[)\]]/gi;
+function tidy(rawTitle, channel) {
+  let title = String(rawTitle || '').replace(NOISE, '').replace(/\s*\|.*$/, '').trim();
+  let artist = String(channel || '').replace(/\s*-\s*Topic$|VEVO$|\s+Official$/i, '').trim();
+  const dash = title.match(/^(.+?)\s+[-–]\s+(.+)$/);
+  if (dash) [, artist, title] = dash;
+  return { title: title || rawTitle, artist };
+}
+
 app.get('/api/search', async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 200);
   if (!q) return res.json([]);
@@ -107,8 +117,7 @@ app.get('/api/search', async (req, res) => {
       .filter((e) => e.id && ID_RE.test(e.id) && e.duration && e.duration < 1800 && e.live_status !== 'is_live')
       .map((e) => ({
         id: e.id,
-        title: e.title,
-        artist: e.channel || e.uploader || '',
+        ...tidy(e.title, e.channel || e.uploader),
         duration: Math.round(e.duration),
         thumb: thumb(e.id),
       }));
@@ -293,6 +302,16 @@ io.on('connection', (socket) => {
         if (r.queue.length) startAt(r, clampIndex(r, a.index));
         else stop(r);
         break;
+      case 'reorder': {
+        // shuffle/unshuffle: keep the current track playing where it is
+        const q = cleanQueue(a.queue);
+        const cur = r.queue[r.index];
+        const i = cur ? q.findIndex((t) => t.id === cur.id) : -1;
+        if (!q.length || i < 0) return;
+        r.queue = q;
+        r.index = i;
+        break;
+      }
       case 'playIndex':
         if (r.queue.length) startAt(r, clampIndex(r, a.index));
         break;

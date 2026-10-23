@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react';
+import Home from './components/Home';
 import Search from './components/Search';
 import Library from './components/Library';
 import Room from './components/Room';
 import { MiniPlayer, FullPlayer } from './components/Player';
 import ActionSheet from './components/ActionSheet';
 import { Icon } from './components/Icon';
-import { art, ui } from './lib/ui';
+import { art, haptic, ui } from './lib/ui';
 import { joinRoom, roomStore } from './lib/room';
 import { player } from './lib/player';
 
-type Tab = 'search' | 'library' | 'room';
+type Tab = 'home' | 'search' | 'library' | 'room';
+
+const TABS: { id: Tab; icon: string; label: string }[] = [
+  { id: 'home', icon: 'home', label: 'Home' },
+  { id: 'search', icon: 'search', label: 'Search' },
+  { id: 'library', icon: 'library', label: 'Library' },
+  { id: 'room', icon: 'users', label: 'Together' },
+];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('search');
+  const [tab, setTab] = useState<Tab>('home');
   const [full, setFull] = useState(false);
   const [locked, setLocked] = useState(false);
   const { toast } = ui.use();
@@ -43,24 +51,34 @@ export default function App() {
     <div className="app">
       <Ambient />
       <main className="content">
-        <div hidden={tab !== 'search'}><Search /></div>
-        <div hidden={tab !== 'library'}><Library /></div>
-        <div hidden={tab !== 'room'}><Room /></div>
+        <div className="pane" hidden={tab !== 'home'}><Home onOpenLibrary={() => setTab('library')} /></div>
+        <div className="pane" hidden={tab !== 'search'}><Search /></div>
+        <div className="pane" hidden={tab !== 'library'}><Library /></div>
+        <div className="pane" hidden={tab !== 'room'}><Room /></div>
       </main>
 
       <div className="dock">
         <MiniPlayer onOpen={() => setFull(true)} />
-        <nav className="tabs glass">
-          <button className={tab === 'search' ? 'on' : ''} onClick={() => setTab('search')} aria-label="Search">
-            <Icon name="search" />
-          </button>
-          <button className={tab === 'library' ? 'on' : ''} onClick={() => setTab('library')} aria-label="Library">
-            <Icon name="library" />
-          </button>
-          <button className={tab === 'room' ? 'on' : ''} onClick={() => setTab('room')} aria-label="Together">
-            <Icon name="users" />
-            {code && <span className="badge" />}
-          </button>
+        <nav className="tabs glass" style={{ '--tab': TABS.findIndex((x) => x.id === tab) } as React.CSSProperties}>
+          <span className="tab-pill" aria-hidden />
+          {TABS.map((x) => (
+            <button
+              key={x.id}
+              className={tab === x.id ? 'on' : ''}
+              aria-label={x.label}
+              onClick={() => {
+                haptic();
+                if (tab === x.id) window.scrollTo({ top: 0, behavior: 'smooth' });
+                else {
+                  setTab(x.id);
+                  window.scrollTo(0, 0);
+                }
+              }}
+            >
+              <Icon name={x.icon} />
+              {x.id === 'room' && code && <span className="badge" />}
+            </button>
+          ))}
         </nav>
       </div>
 

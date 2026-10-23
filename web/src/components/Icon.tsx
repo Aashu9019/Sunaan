@@ -1,6 +1,7 @@
 const paths: Record<string, string> = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm9 16-4-4',
   library: 'M4 4v16M9 4v16M14 4l5 16',
+  home: 'M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4v-9.5Z',
   users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 9a7 7 0 0 1 14 0M17 3.5a4 4 0 0 1 0 7.5M22 20a7 7 0 0 0-4-6.3',
   play: 'M7 4.5v15l12-7.5-12-7.5Z',
   pause: 'M7 4h3.5v16H7zM13.5 4H17v16h-3.5z',
@@ -16,12 +17,16 @@ const paths: Record<string, string> = {
   shuffle: 'M3 7h4l10 10h4M3 17h4l3-3m4-4 3-3h4m-3-3 3 3-3 3m0 4 3 3-3 3',
   trash: 'M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13',
   queue: 'M4 6h12M4 12h12M4 18h8m6-3v6l4-3-4-3Z',
+  heart: 'M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 7.5 2.8C19.5 15.4 12 20 12 20Z',
+  repeat: 'M4 12V9.5A3.5 3.5 0 0 1 7.5 6H19m-3-3 3 3-3 3M20 12v2.5a3.5 3.5 0 0 1-3.5 3.5H5m3 3-3-3 3-3',
+  save: 'M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3',
   edit: 'M4 20h4L19 9l-4-4L4 16v4Zm10-14 4 4',
   share:'M12 3v13m0-13-4 4m4-4 4 4M5 13v7h14v-7',
 };
 
 export function Icon({ name, size = 22 }: { name: string; size?: number }) {
-  const filled = name === 'play' || name === 'pause' || name === 'next' || name === 'prev';
+  const filled = ['play', 'pause', 'next', 'prev', 'heartFill'].includes(name);
+  if (name === 'heartFill') name = 'heart';
   return (
     <svg
       width={size}

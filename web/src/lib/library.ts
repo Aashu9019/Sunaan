@@ -122,3 +122,34 @@ export async function removePlaylist(id: string) {
   await db.deletePlaylist(id);
   library.set({ playlists: library.get().playlists.filter((p) => p.id !== id) });
 }
+
+// "Liked" is a normal playlist with a fixed id, so it can be shared like any other.
+export const LIKED = '00000000-0000-4000-8000-00000000117e';
+
+export const useLiked = (id: string) =>
+  library.use().playlists.find((p) => p.id === LIKED)?.tracks.some((t) => t.id === id) ?? false;
+
+export async function toggleLike(t: Track) {
+  const p = library.get().playlists.find((x) => x.id === LIKED) ?? { id: LIKED, name: 'Liked', tracks: [], created: 0 };
+  const has = p.tracks.some((x) => x.id === t.id);
+  await savePlaylist({ ...p, tracks: has ? p.tracks.filter((x) => x.id !== t.id) : [t, ...p.tracks] });
+  return !has;
+}
+
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// Export the audio file to the phone: Android drops it in Downloads, iOS opens the share sheet ("Save to Files").
+export async function saveToDevice(t: Track) {
+  const blob = (await db.getAudio(t.id)) ?? (await (await fetch(`/api/stream/${t.id}`)).blob());
+  const name = `${t.title.replace(/[\/:*?"<>|]/g, '').slice(0, 80)}.m4a`;
+  const file = new File([blob], name, { type: blob.type || 'audio/mp4' });
+  if (isIOS() && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file] }).catch(() => {});
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}

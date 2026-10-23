@@ -21,4 +21,6 @@ export const fmt = (s: number) => {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 };
 
-export const art = (id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+export const haptic = () => navigator.vibrate?.(8);
+
+export const art =(id: string) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;

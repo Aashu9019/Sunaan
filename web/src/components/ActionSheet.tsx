@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addToPlaylist, createPlaylist, download, library, removeDownload, removeFromPlaylist } from '../lib/library';
+import { addToPlaylist, createPlaylist, download, library, removeDownload, removeFromPlaylist, saveToDevice, toggleLike, useLiked } from '../lib/library';
 import { dispatch } from '../lib/player';
 import { toast, ui } from '../lib/ui';
 import { Icon } from './Icon';
@@ -8,12 +8,18 @@ export default function ActionSheet() {
   const { sheet } = ui.use();
   const { playlists, downloads, progress } = library.use();
   const [picking, setPicking] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const liked = useLiked(sheet?.track.id ?? '');
 
   if (!sheet) return null;
   const { track: t, playlist, index } = sheet;
   const close = () => {
-    setPicking(false);
-    ui.set({ sheet: null });
+    setLeaving(true);
+    setTimeout(() => {
+      setPicking(false);
+      setLeaving(false);
+      ui.set({ sheet: null });
+    }, 220);
   };
   const act = (fn: () => unknown, msg?: string) => () => {
     fn();
@@ -22,7 +28,7 @@ export default function ActionSheet() {
   };
 
   return (
-    <div className="scrim" onClick={close}>
+    <div className={`scrim${leaving ? ' out' : ''}`} onClick={close}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
           <img className="thumb" src={t.thumb} alt="" />
@@ -60,6 +66,9 @@ export default function ActionSheet() {
             <button className="sheet-item" onClick={act(() => dispatch({ type: 'enqueue', track: t }), 'Added to queue')}>
               <Icon name="queue" /> Add to queue
             </button>
+            <button className="sheet-item" onClick={act(() => toggleLike(t), liked ? 'Removed from Liked' : 'Liked')}>
+              <Icon name={liked ? 'heartFill' : 'heart'} /> {liked ? 'Unlike' : 'Like'}
+            </button>
             <button className="sheet-item" onClick={() => setPicking(true)}>
               <Icon name="plus" /> Add to playlist
             </button>
@@ -72,6 +81,9 @@ export default function ActionSheet() {
                 <Icon name="down" /> Download
               </button>
             )}
+            <button className="sheet-item" onClick={act(() => saveToDevice(t).catch(() => toast('Save failed')), 'Saving to phone')}>
+              <Icon name="save" /> Save to phone
+            </button>
             {playlist && index != null && (
               <button className="sheet-item danger" onClick={act(() => removeFromPlaylist(playlist, index), 'Removed')}>
                 <Icon name="x" /> Remove from {playlist.name}

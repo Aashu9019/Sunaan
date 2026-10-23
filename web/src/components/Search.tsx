@@ -66,7 +66,7 @@ export default function Search() {
         )}
       </form>
 
-      {loading && <div className="spinner" />}
+      {loading && <div className="skel-list">{Array.from({ length: 8 }, (_, i) => <div key={i} className="skel-row"><div className="skel thumb" /><div><div className="skel line" /><div className="skel line short" /></div></div>)}</div>}
       {error && <p className="muted pad">{error}</p>}
 
       {!loading && !results.length && !error && recent.length > 0 && (
@@ -81,7 +81,7 @@ export default function Search() {
 
       {!loading &&
         results.map((t, i) => (
-          <TrackRow key={t.id} track={t} onPlay={() => dispatch({ type: 'setQueue', queue: results.slice(i), index: 0 })} />
+          <TrackRow key={t.id} track={t} index={i} onPlay={() => dispatch({ type: 'setQueue', queue: results.slice(i), index: 0 })} />
         ))}
     </section>
   );
