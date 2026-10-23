@@ -136,6 +136,10 @@ function Lock() {
             setBad(false);
           }}
           placeholder="Group key"
+          autoCapitalize="none"
+          autoCorrect="off"
+          autoComplete="off"
+          spellCheck={false}
           autoFocus
         />
         <button className="primary wide" type="submit">Enter</button>

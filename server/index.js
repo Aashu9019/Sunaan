@@ -50,7 +50,9 @@ const cookieKey = (header = '') => decodeURIComponent(/(?:^|;\s*)gk=([^;]*)/.exe
 const allowed = (cookie, token) => !GROUP_KEY || cookieKey(cookie) === GROUP_KEY || token === TOKEN;
 
 app.post('/api/unlock', (req, res) => {
-  if (GROUP_KEY && req.body?.key !== GROUP_KEY) return res.sendStatus(401);
+  // phones auto-capitalise and add spaces; compare loosely
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  if (GROUP_KEY && norm(req.body?.key) !== norm(GROUP_KEY)) return res.sendStatus(401);
   res.setHeader('set-cookie', `gk=${encodeURIComponent(GROUP_KEY)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
   res.json({ token: TOKEN });
 });
