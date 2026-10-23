@@ -1,0 +1,40 @@
+# Groove
+
+Private music PWA for a small group. Search and stream from YouTube, build playlists, download songs for offline play, and listen together in sync.
+
+Works on Android and iPhone: open the site in the browser, then use "Add to Home Screen".
+
+## Features
+
+- Search and stream audio from YouTube (yt-dlp on the server)
+- Playlists stored on your device, plus shared group playlists in Neon Postgres
+- Download songs for offline play (stored in IndexedDB)
+- Rooms: everyone in a room hears the same song at the same moment
+- Lock screen and notification controls (Media Session)
+- Group key so only your people can use the server
+
+## Run locally
+
+```bash
+npm run setup
+npm run dev          # web on :5173, server on :3001
+```
+
+Without `GROUP_KEY` the app is open. Without `DATABASE_URL`, group playlists are turned off and everything else still works.
+
+## Deploy (Render + Neon)
+
+1. Create a Neon project and copy its connection string.
+2. On Render: New > Blueprint > pick this repo. `render.yaml` sets everything up.
+3. Set these environment variables:
+   - `DATABASE_URL`: the Neon connection string
+   - `GROUP_KEY`: a password you give your group
+   - `YTDLP_COOKIES` (optional): the contents of a `cookies.txt` export from a logged-in YouTube browser session. You need it if search or playback fails with "Sign in to confirm you're not a bot". YouTube often blocks cloud IPs.
+4. Open the Render URL on each phone, enter the key, then Add to Home Screen.
+
+On Render's free plan the server sleeps after 15 minutes idle, and the first request after that takes about 50 seconds. Downloaded songs still play offline.
+
+## Notes
+
+- iOS can pause a PWA's audio after a long time on the lock screen, and can clear PWA storage if the app goes unused for weeks.
+- This is for private use. Streaming from YouTube this way is against YouTube's terms, so keep it within your group.

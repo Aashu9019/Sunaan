@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: groove
+    runtime: node
+    plan: free
+    buildCommand: npm run setup && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATABASE_URL # Neon connection string
+        sync: false
+      - key: GROUP_KEY # password your group types once
+        sync: false
+      - key: YTDLP_COOKIES # optional: contents of a cookies.txt export if YouTube blocks Render
+        sync: false
