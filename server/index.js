@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import path from 'node:path';
@@ -27,24 +28,37 @@ if (process.env.YTDLP_COOKIES) {
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+// one line per API call: helps debug phones we can't attach a console to
+app.use('/api', (req, res, next) => {
+  const t = Date.now();
+  res.on('finish', () => {
+    const ua = /iPhone|iPad|Android|Windows|Mac/.exec(req.headers['user-agent'] || '')?.[0] || '?';
+    console.log(`${res.statusCode} ${req.method} ${req.originalUrl.slice(0, 80)} ${req.headers.range || ''} ${Date.now() - t}ms ${ua}`);
+  });
+  next();
+});
 const http = createServer(app);
 const io = new Server(http, { cors: { origin: true } });
 
 // ---------- Group key (keeps the server private to your people) ----------
 
+// iOS's media player and home-screen apps don't reliably send cookies, so the app also carries
+// a token derived from the key and puts it on URLs (?t=) and the socket handshake.
+const TOKEN = GROUP_KEY ? crypto.createHash('sha256').update(`groove:${GROUP_KEY}`).digest('hex').slice(0, 24) : '';
 const cookieKey = (header = '') => decodeURIComponent(/(?:^|;\s*)gk=([^;]*)/.exec(header)?.[1] || '');
-const allowed = (cookie) => !GROUP_KEY || cookieKey(cookie) === GROUP_KEY;
+const allowed = (cookie, token) => !GROUP_KEY || cookieKey(cookie) === GROUP_KEY || token === TOKEN;
 
 app.post('/api/unlock', (req, res) => {
   if (GROUP_KEY && req.body?.key !== GROUP_KEY) return res.sendStatus(401);
   res.setHeader('set-cookie', `gk=${encodeURIComponent(GROUP_KEY)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${req.secure || req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
-  res.sendStatus(204);
+  res.json({ token: TOKEN });
 });
 
 app.get('/api/health', (_req, res) => res.send('ok'));
-app.use('/api', (req, res, next) => (allowed(req.headers.cookie) ? next() : res.sendStatus(401)));
-app.get('/api/me', (_req, res) => res.json({ ok: true, db: Boolean(pool) }));
-io.use((socket, next) => (allowed(socket.handshake.headers.cookie) ? next() : next(new Error('locked'))));
+app.use('/api', (req, res, next) => (allowed(req.headers.cookie, req.query.t || req.headers['x-groove-token']) ? next() : res.sendStatus(401)));
+app.get('/api/me', (_req, res) => res.json({ ok: true, db: Boolean(pool), token: TOKEN }));
+io.use((socket, next) => (allowed(socket.handshake.headers.cookie, socket.handshake.auth?.t) ? next() : next(new Error('locked'))));
 
 // ---------- Neon: playlists shared with the group ----------
 

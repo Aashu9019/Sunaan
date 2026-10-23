@@ -1,3 +1,4 @@
+import { api, setToken } from './lib/auth';
 import { useEffect, useState } from 'react';
 import Home from './components/Home';
 import Search from './components/Search';
@@ -28,8 +29,11 @@ export default function App() {
 
   useEffect(() => {
     // Offline: fetch throws, stay unlocked so downloads keep working.
-    fetch('/api/me')
-      .then((r) => r.status === 401 && setLocked(true))
+    fetch(api('/api/me'))
+      .then(async (r) => {
+        if (r.status === 401) return setLocked(true);
+        if (r.ok) setToken((await r.json()).token);
+      })
       .catch(() => {});
 
     const fromUrl = new URLSearchParams(location.search).get('room');
@@ -110,12 +114,15 @@ function Lock() {
         className="glass form"
         onSubmit={async (e) => {
           e.preventDefault();
-          const r = await fetch('/api/unlock', {
+          const r = await fetch(api('/api/unlock'), {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ key }),
           });
-          if (r.ok) location.reload();
+          if (r.ok) {
+            setToken((await r.json()).token);
+            location.reload();
+          }
           else setBad(true);
         }}
       >

@@ -1,3 +1,4 @@
+import { api } from './auth';
 import { createStore } from './store';
 import { getAudio, type Track } from './db';
 import { pushHistory } from './history';
@@ -80,7 +81,7 @@ async function load(t: Track) {
   if (loadedId !== t.id) return;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = blob ? URL.createObjectURL(blob) : null;
-  audio.src = objectUrl ?? `/api/stream/${t.id}`;
+  audio.src = objectUrl ?? api(`/api/stream/${t.id}`);
   player.set({ time: 0, duration: t.duration, error: null });
   setMediaSession(t);
   pushHistory(t);
@@ -306,7 +307,7 @@ audio.addEventListener('error', () => {
     player.set({ buffering: true });
     setTimeout(() => {
       if (loadedId !== id) return;
-      audio.src = `/api/stream/${id}?retry=${retries}`;
+      audio.src = api(`/api/stream/${id}?retry=${retries}`);
       audio.currentTime = at;
       if (room) void syncRoom();
       else play();
@@ -315,7 +316,7 @@ audio.addEventListener('error', () => {
   }
   if (!navigator.onLine) return player.set({ error: 'Offline', buffering: false });
   // tell "server is down" apart from "this song is broken"
-  fetch('/api/health', { cache: 'no-store' })
+  fetch(api('/api/health'), { cache: 'no-store' })
     .then((r) => r.ok)
     .catch(() => false)
     .then((up) => player.set({ error: up ? "Can't play this song" : 'Server offline', buffering: false }));

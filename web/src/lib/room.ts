@@ -1,4 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
+import { getToken } from './auth';
 import { createStore } from './store';
 import { applyRoom, audio, leaveRoomPlayback, player, setRemote, type RoomState } from './player';
 
@@ -38,7 +39,7 @@ export function joinRoom(code: string, name: string) {
   leaveRoom();
   code = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!code) return;
-  const s = io({ transports: ['websocket', 'polling'] });
+  const s = io({ transports: ['websocket', 'polling'], auth: { t: getToken() } });
   socket = s;
   roomStore.set({ code, members: [], connected: false });
   localStorage.setItem('groove:room', code);

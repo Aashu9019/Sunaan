@@ -1,3 +1,5 @@
+import { api } from './auth';
+import { toast } from './ui';
 import { createStore } from './store';
 import * as db from './db';
 import type { Playlist, Track } from './db';
@@ -13,7 +15,7 @@ export type GroupPlaylist = Playlist & { owner: string };
 
 export async function loadGroup() {
   try {
-    const res = await fetch('/api/group/playlists');
+    const res = await fetch(api('/api/group/playlists'));
     if (!res.ok) return;
     const rows: { id: string; name: string; owner: string; tracks: Track[]; updated_at: string }[] = await res.json();
     library.set({ group: rows.map((r) => ({ ...r, created: Date.parse(r.updated_at) })) });
@@ -22,7 +24,7 @@ export async function loadGroup() {
 
 export async function shareToGroup(p: Playlist) {
   const owner = localStorage.getItem('groove:name') || 'Someone';
-  const res = await fetch(`/api/group/playlists/${p.id}`, {
+  const res = await fetch(api(`/api/group/playlists/${p.id}`), {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: p.name, owner, tracks: p.tracks }),
@@ -32,7 +34,7 @@ export async function shareToGroup(p: Playlist) {
 }
 
 export async function unshare(id: string) {
-  await fetch(`/api/group/playlists/${id}`, { method: 'DELETE' });
+  await fetch(api(`/api/group/playlists/${id}`), { method: 'DELETE' });
   await loadGroup();
 }
 
@@ -59,12 +61,20 @@ export function download(t: Track) {
   if (downloads[t.id] || progress[t.id] != null) return;
   setProgress(t.id, 0);
   navigator.storage?.persist?.();
-  queue = queue.then(() => fetchTrack(t)).catch((e) => console.error('download failed', t.id, e));
+  queue = queue
+    .then(() => fetchTrack(t).catch(() => fetchTrack(t))) // one quiet retry
+    .then(
+      () => toast(`Downloaded ${t.title}`),
+      (e) => {
+        console.error('download failed', t.id, e);
+        toast(navigator.onLine ? `Download failed: ${t.title}` : 'Offline');
+      },
+    );
 }
 
 async function fetchTrack(t: Track) {
   try {
-    const res = await fetch(`/api/stream/${t.id}`);
+    const res = await fetch(api(`/api/stream/${t.id}`));
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
     const total = Number(res.headers.get('content-length')) || 0;
     const reader = res.body.getReader();
@@ -140,7 +150,7 @@ const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.p
 
 // Export the audio file to the phone: Android drops it in Downloads, iOS opens the share sheet ("Save to Files").
 export async function saveToDevice(t: Track) {
-  const blob = (await db.getAudio(t.id)) ?? (await (await fetch(`/api/stream/${t.id}`)).blob());
+  const blob = (await db.getAudio(t.id)) ?? (await (await fetch(api(`/api/stream/${t.id}`))).blob());
   const name = `${t.title.replace(/[\/:*?"<>|]/g, '').slice(0, 80)}.m4a`;
   const file = new File([blob], name, { type: blob.type || 'audio/mp4' });
   if (isIOS() && navigator.canShare?.({ files: [file] })) {

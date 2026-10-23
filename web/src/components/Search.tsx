@@ -1,3 +1,4 @@
+import { api } from '../lib/auth';
 import { useEffect, useRef, useState } from 'react';
 import type { Track } from '../lib/db';
 import { dispatch } from '../lib/player';
@@ -45,7 +46,7 @@ export default function Search() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: ctl.signal });
+      const res = await fetch(api(`/api/search?q=${encodeURIComponent(query)}`), { signal: ctl.signal });
       if (!res.ok) throw new Error();
       setResults(await res.json());
     } catch (e) {
@@ -67,7 +68,7 @@ export default function Search() {
     if (!query) return setSuggestions([]);
     const ctl = new AbortController();
     const id = setTimeout(() => {
-      fetch(`/api/suggest?q=${encodeURIComponent(query)}`, { signal: ctl.signal })
+      fetch(api(`/api/suggest?q=${encodeURIComponent(query)}`), { signal: ctl.signal })
         .then((r) => (r.ok ? r.json() : []))
         .then(setSuggestions)
         .catch(() => {});

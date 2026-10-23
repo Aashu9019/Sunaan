@@ -77,7 +77,7 @@ export default function ActionSheet() {
                 <Icon name="trash" /> Remove download
               </button>
             ) : (
-              <button className="sheet-item" disabled={progress[t.id] != null} onClick={act(() => download(t), 'Downloading')}>
+              <button className="sheet-item" disabled={progress[t.id] != null} onClick={act(() => download(t), 'Downloading...')}>
                 <Icon name="down" /> Download
               </button>
             )}

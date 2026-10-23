@@ -1,3 +1,4 @@
+import { api } from './auth';
 import type { Track } from './db';
 
 // Home page rows. Each one is just a YouTube search, cached for a few hours.
@@ -19,7 +20,7 @@ export async function fetchShelf(q: string): Promise<Track[]> {
   } catch {}
   if (cached && Date.now() - cached.at < TTL) return cached.items;
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const res = await fetch(api(`/api/search?q=${encodeURIComponent(q)}`));
     if (!res.ok) throw new Error();
     const items: Track[] = (await res.json()).slice(0, 15);
     try {
