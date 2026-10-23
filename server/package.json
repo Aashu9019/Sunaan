@@ -10,6 +10,7 @@
     "express": "^4.21.2",
     "pg": "^8.23.1",
     "socket.io": "^4.8.1",
-    "youtube-dl-exec": "^3.0.10"
+    "youtube-dl-exec": "^3.0.10",
+    "youtubei.js": "^18.3.0"
   }
 }

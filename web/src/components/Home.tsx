@@ -43,7 +43,7 @@ export default function Home({ onOpenLibrary }: { onOpenLibrary: () => void }) {
               {q.icon ? (
                 <span className="quick-art dl"><Icon name={q.icon} size={20} /></span>
               ) : (
-                <Art id={q.tracks[0].id} className="quick-art" />
+                <Art id={q.tracks[0].id} src={q.tracks[0].thumb} className="quick-art" />
               )}
               <span className="title">{q.label}</span>
               <Eq id={q.tracks[0].id} />
@@ -113,7 +113,7 @@ function Card({ track, i, onPlay }: { track: Track; i: number; onPlay: () => voi
       }}
     >
       <span className="card-art">
-        <Art id={track.id} />
+        <Art id={track.id} src={track.art} />
         <Eq id={track.id} />
       </span>
       <span className="title">{track.title}</span>

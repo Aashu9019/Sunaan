@@ -28,7 +28,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/i\.ytimg\.com\//,
+            urlPattern: /^https:\/\/(i\.ytimg\.com|(lh3|yt3)\.googleusercontent\.com)\//,
             handler: 'CacheFirst',
             options: {
               cacheName: 'thumbs',

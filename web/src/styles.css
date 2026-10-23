@@ -401,3 +401,19 @@ h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 28px 0 
 .repeat { position: relative; }
 .repeat .one { position: absolute; top: 7px; right: 6px; font-size: 9px; font-weight: 800; background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 0 3px; line-height: 13px; }
 .extras { display: flex; justify-content: center; margin-top: 14px; max-width: 520px; width: 100%; align-self: center; }
+
+/* live search */
+.search { position: relative; overflow: hidden; }
+.search.busy::after {
+  content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 40%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: scan 0.9s ease-in-out infinite;
+}
+@keyframes scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.suggest { margin: -6px 0 14px; padding: 6px; border-radius: 18px; animation: rise 0.2s var(--out); }
+.suggest-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; text-align: left; color: var(--muted); }
+.suggest-item span:nth-child(2) { flex: 1; color: var(--text); font-weight: 500; }
+.suggest-item:active { background: rgba(255, 255, 255, 0.08); }
+.suggest-item .fill { padding: 0 6px; font-size: 16px; }
+.results { transition: opacity 0.2s; }
+.results.stale { opacity: 0.55; }

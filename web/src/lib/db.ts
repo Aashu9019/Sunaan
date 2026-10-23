@@ -1,4 +1,4 @@
-export type Track = { id: string; title: string; artist: string; duration: number; thumb: string };
+export type Track = { id: string; title: string; artist: string; duration: number; thumb: string; art?: string };
 export type Playlist = { id: string; name: string; tracks: Track[]; created: number };
 
 let dbp: Promise<IDBDatabase> | null = null;

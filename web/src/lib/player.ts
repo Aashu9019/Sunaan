@@ -289,8 +289,39 @@ audio.addEventListener('ended', () => {
   } else if (repeat === 'all' && index >= queue.length - 1 && queue.length) dispatch({ type: 'playIndex', index: 0 });
   else dispatch({ type: 'ended', index });
 });
+// Streams can fail transiently (server waking up, expired YouTube URL). Retry quietly from the
+// same position before telling the user anything.
+let retries = 0;
+let retryFor: string | null = null;
 audio.addEventListener('error', () => {
-  if (audio.src) player.set({ error: navigator.onLine ? "Can't play" : 'Offline', buffering: false });
+  if (!audio.src || audio.src === silent || !loadedId) return;
+  if (retryFor !== loadedId) {
+    retryFor = loadedId;
+    retries = 0;
+  }
+  if (!objectUrl && navigator.onLine && retries < 3) {
+    retries++;
+    const id = loadedId;
+    const at = audio.currentTime;
+    player.set({ buffering: true });
+    setTimeout(() => {
+      if (loadedId !== id) return;
+      audio.src = `/api/stream/${id}?retry=${retries}`;
+      audio.currentTime = at;
+      if (room) void syncRoom();
+      else play();
+    }, 700 * retries);
+    return;
+  }
+  if (!navigator.onLine) return player.set({ error: 'Offline', buffering: false });
+  // tell "server is down" apart from "this song is broken"
+  fetch('/api/health', { cache: 'no-store' })
+    .then((r) => r.ok)
+    .catch(() => false)
+    .then((up) => player.set({ error: up ? "Can't play this song" : 'Server offline', buffering: false }));
+});
+audio.addEventListener('playing', () => {
+  if (player.get().error) player.set({ error: null });
 });
 
 // After a seek/rejoin while in a room, resync once data is available.
@@ -335,6 +366,7 @@ function setMediaSession(t: Track) {
     title: t.title,
     artist: t.artist,
     artwork: [
+      ...(t.art ? [{ src: t.art, sizes: '544x544', type: 'image/jpeg' }] : []),
       { src: `https://i.ytimg.com/vi/${t.id}/mqdefault.jpg`, sizes: '320x180', type: 'image/jpeg' },
       { src: `https://i.ytimg.com/vi/${t.id}/hqdefault.jpg`, sizes: '480x360', type: 'image/jpeg' },
     ],

@@ -23,7 +23,7 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
       <div className={`mini-progress${buffering ? ' buffering' : ''}`} style={{ transform: `scaleX(${duration ? time / duration : 0})` }} />
       <button className="row-main" onClick={onOpen}>
         <span className="mini-art">
-          <Art key={t.id} id={t.id} className="thumb" />
+          <Art key={t.id} id={t.id} src={t.thumb} className="thumb" />
         </span>
         <span className="meta" key={t.id}>
           <span className="title slide-in">{t.title}</span>
@@ -100,7 +100,7 @@ export function FullPlayer({ onClose }: { onClose: () => void }) {
   return (
     <div className="full" ref={sheet}>
       <div className="full-bg" aria-hidden>
-        <Art key={t.id} id={t.id} hi />
+        <Art key={t.id} id={t.id} src={t.art} hi />
       </div>
       <div className="full-top" {...dragHandlers}>
         <span className="grabber" />
@@ -134,7 +134,7 @@ export function FullPlayer({ onClose }: { onClose: () => void }) {
       ) : (
         <div className="art-wrap" {...dragHandlers}>
           <div className={`art${playing ? ' playing' : ''}`}>
-            <Art key={t.id} id={t.id} hi />
+            <Art key={t.id} id={t.id} src={t.art} hi />
           </div>
         </div>
       )}

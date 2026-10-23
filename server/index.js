@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import youtubedl from 'youtube-dl-exec';
 import pg from 'pg';
+import { Innertube } from 'youtubei.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 const GROUP_KEY = process.env.GROUP_KEY || '';
@@ -16,7 +17,7 @@ const ID_RE = /^[\w-]{11}$/;
 // Render's IPs often get YouTube's "confirm you're not a bot" wall; exported cookies fix it.
 // Several player clients: when YouTube challenges one (common on cloud IPs), yt-dlp falls back to the next.
 const ytOpts = {
-  extractorArgs: `youtube:player_client=${process.env.YTDLP_CLIENTS || 'default,tv,web_safari,mweb'}`,
+  extractorArgs: `youtube:player_client=${process.env.YTDLP_CLIENTS || 'default,tv,web_safari'}`,
 };
 if (process.env.YTDLP_COOKIES) {
   const file = path.join(process.env.TMPDIR || '/tmp', 'yt-cookies.txt');
@@ -60,7 +61,7 @@ await pool?.query(`
     updated_at timestamptz not null default now()
   )`);
 
-const needDb = (_req, res, next) => (pool ? next() : res.status(503).json({ error: 'DATABASE_URL not set' }));
+const needDb = (req, res, next) => (pool ? next() : req.method === 'GET' ? res.json([]) : res.status(503).json({ error: 'DATABASE_URL not set' }));
 
 app.get('/api/group/playlists', needDb, async (_req, res) => {
   const { rows } = await pool.query('select id, name, owner, tracks, updated_at from shared_playlists order by updated_at desc');
@@ -103,11 +104,61 @@ function tidy(rawTitle, channel) {
   return { title: title || rawTitle, artist };
 }
 
+// YouTube Music search: ~0.5s, songs only, real artist names and square album art.
+let ytm = null;
+const music = () => (ytm ??= Innertube.create({ retrieve_player: false }).catch((e) => ((ytm = null), Promise.reject(e))));
+
+// lh3 art URLs end in "=w60-h60-..." and can be resized by rewriting that suffix
+const sized = (url, px) => url.replace(/=w\d+-h\d+.*$/, `=w${px}-h${px}-l90-rj`);
+
+async function musicSearch(q) {
+  const r = await (await music()).music.search(q, { type: 'song' });
+  const songs = r.contents?.[0]?.contents ?? [];
+  return songs
+    .filter((s) => s.id && ID_RE.test(s.id) && s.duration?.seconds)
+    .map((s) => {
+      const t = s.thumbnails?.[0]?.url || '';
+      return {
+        id: s.id,
+        title: s.title,
+        artist: (s.artists ?? []).map((a) => a.name).join(', ') || s.author?.name || '',
+        duration: s.duration.seconds,
+        thumb: t ? sized(t, 120) : thumb(s.id),
+        art: t ? sized(t, 544) : undefined,
+      };
+    });
+}
+
+app.get('/api/suggest', async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 100);
+  if (!q) return res.json([]);
+  try {
+    const sections = await (await music()).music.getSearchSuggestions(q);
+    const out = sections
+      .flatMap((s) => s.contents ?? [])
+      .map((c) => c.suggestion?.text)
+      .filter(Boolean)
+      .slice(0, 6);
+    res.json(out);
+  } catch {
+    res.json([]);
+  }
+});
+
 app.get('/api/search', async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 200);
   if (!q) return res.json([]);
   const hit = searchCache.get(q.toLowerCase());
   if (hit && Date.now() - hit.at < 6 * 3600e3) return res.json(hit.items);
+  try {
+    const items = await musicSearch(q);
+    if (items.length) {
+      searchCache.set(q.toLowerCase(), { at: Date.now(), items });
+      return res.json(items);
+    }
+  } catch (e) {
+    console.error('music search failed, falling back to yt-dlp:', e.message);
+  }
   try {
     const r = await youtubedl(`ytsearch25:${q}`, {
       dumpSingleJson: true,
@@ -205,6 +256,7 @@ app.get('/api/stream/:id', async (req, res) => {
     res.end();
   } catch (e) {
     console.error('stream failed:', id, e.stderr || e.message);
+    urlCache.delete(id); // next attempt resolves a fresh URL
     if (!res.headersSent) res.sendStatus(502);
     else res.destroy();
   }
@@ -215,6 +267,9 @@ app.get('/api/stream/:id', async (req, res) => {
 const rooms = new Map();
 const LEAD_MS = 800; // gives every client time to buffer before a track starts
 
+// only accept artwork from YouTube's own image hosts
+const safeImg = (u) => (typeof u === 'string' && /^https:\/\/((lh3|yt3)\.googleusercontent\.com|i\.ytimg\.com)\//.test(u) ? u.slice(0, 500) : undefined);
+
 const cleanTrack = (t) =>
   t && ID_RE.test(t.id)
     ? {
@@ -222,7 +277,8 @@ const cleanTrack = (t) =>
         title: String(t.title || '').slice(0, 200),
         artist: String(t.artist || '').slice(0, 100),
         duration: Number(t.duration) || 0,
-        thumb: thumb(t.id),
+        thumb: safeImg(t.thumb) || thumb(t.id),
+        art: safeImg(t.art),
       }
     : null;
 const cleanQueue = (q) => (Array.isArray(q) ? q : []).slice(0, 500).map(cleanTrack).filter(Boolean);

@@ -18,11 +18,18 @@ if (!fs.existsSync(exe)) {
   fs.writeFileSync(exe, Buffer.from(await res.arrayBuffer()), { mode: 0o755 });
 }
 
-const server = spawn(process.execPath, ['--env-file-if-exists=../.env', 'index.js'], {
+// Restarts on crash or code reload without dropping the tunnel, so the link stays the same.
+let server;
+let stopping = false;
+const startServer = () => {
+  server = spawn(process.execPath, ['--env-file-if-exists=../.env', 'index.js'], {
   cwd: path.join(root, 'server'),
   env: { ...process.env, PORT },
   stdio: 'inherit',
 });
+  server.on('exit', () => !stopping && setTimeout(startServer, 1000));
+};
+startServer();
 
 const tunnel = spawn(exe, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${PORT}`]);
 let shown = false;
@@ -39,11 +46,11 @@ tunnel.stdout.on('data', watch);
 tunnel.stderr.on('data', watch);
 
 const stop = () => {
+  stopping = true;
   server.kill();
   tunnel.kill();
   process.exit();
 };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
-server.on('exit', stop);
 tunnel.on('exit', stop);

@@ -95,7 +95,7 @@ function Ambient() {
   const t = queue[index];
   return (
     <div className="ambient" aria-hidden>
-      {t && <img key={t.id} src={art(t.id)} alt="" />}
+      {t && <img key={t.id} src={t.art ?? art(t.id)} alt="" />}
     </div>
   );
 }
