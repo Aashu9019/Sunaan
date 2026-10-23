@@ -201,25 +201,60 @@ app.get('/api/search', async (req, res) => {
 
 // Direct googlevideo URLs expire after ~6h and are tied to this server's IP,
 // so we resolve once, cache, and proxy the bytes (with Range support for seeking).
-function resolveUrl(id) {
-  const c = urlCache.get(id);
-  if (c && Date.now() - c.at < 3 * 3600e3) return c.p;
-  const p = youtubedl(`https://www.youtube.com/watch?v=${id}`, {
+async function viaYtdlp(id) {
+  const out = await youtubedl(`https://www.youtube.com/watch?v=${id}`, {
     getUrl: true,
     format: 'bestaudio[ext=m4a]/bestaudio',
     noPlaylist: true,
     noWarnings: true,
     ...ytOpts,
-  }).then((out) => String(out).trim().split('\n')[0]);
+  });
+  return String(out).trim().split('\n')[0];
+}
+
+// YouTube Music / iOS client URLs only serve the first ~1MB without a PO token, so yt-dlp
+// is the one method that returns full songs. Kept as a list so more can be added.
+const METHODS = [['yt-dlp', viaYtdlp]];
+
+async function findUrl(id) {
+  const errors = [];
+  for (const [name, get] of METHODS) {
+    try {
+      const url = await get(id);
+      const probe = await fetch(url, { headers: { range: 'bytes=1048576-1048577' } });
+      if (probe.ok || probe.status === 416) return url; // 416 = song under 1MB
+      errors.push(`${name}: HTTP ${probe.status}`);
+    } catch (e) {
+      errors.push(`${name}: ${String(e.stderr || e.message).split('\n').filter(Boolean).pop()?.slice(0, 160)}`);
+    }
+  }
+  throw new Error(errors.join(' | '));
+}
+
+function resolveUrl(id) {
+  const c = urlCache.get(id);
+  if (c && Date.now() - c.at < 3 * 3600e3) return c.p;
+  const p = findUrl(id);
   urlCache.set(id, { at: Date.now(), p });
   p.catch(() => urlCache.delete(id));
   return p;
 }
 
 // googlevideo throttles large single requests to roughly realtime, so never ask for more than CHUNK at once.
-const CHUNK = 4 * 1024 * 1024;
+// Ranges past the end of the file get 403 from googlevideo, so clamp to the known size.
+const CHUNK = 2 * 1024 * 1024;
+const sizes = new Map(); // id -> total bytes, learned from content-range
+
+const totalOf = (up) => Number(/\/(\d+)$/.exec(up.headers.get('content-range') || '')?.[1]) || 0;
 
 async function upstream(id, start, end) {
+  if (!sizes.has(id)) {
+    const probe = await fetch(await resolveUrl(id), { headers: { range: 'bytes=0-0' } });
+    if (probe.ok) sizes.set(id, totalOf(probe));
+    await probe.arrayBuffer().catch(() => {});
+  }
+  const total = sizes.get(id);
+  if (total) end = Math.min(end, total - 1);
   const range = `bytes=${start}-${end}`;
   let up = await fetch(await resolveUrl(id), { headers: { range } });
   if (up.status === 403 || up.status === 410) {
@@ -227,16 +262,15 @@ async function upstream(id, start, end) {
     up = await fetch(await resolveUrl(id), { headers: { range } });
   }
   if (!up.ok) throw new Error(`upstream ${up.status}`);
+  if (totalOf(up)) sizes.set(id, totalOf(up));
   return up;
 }
-
-const totalOf = (up) => Number(/\/(\d+)$/.exec(up.headers.get('content-range') || '')?.[1]) || 0;
 
 app.get('/api/stream/:id', async (req, res) => {
   const { id } = req.params;
   if (!ID_RE.test(id)) return res.sendStatus(400);
   let closed = false;
-  req.on('close', () => (closed = true));
+  res.on('close', () => (closed = true)); // req 'close' fires once the request is read, not on disconnect
   res.setHeader('accept-ranges', 'bytes');
   res.setHeader('cache-control', 'no-store');
   try {
@@ -273,7 +307,7 @@ app.get('/api/stream/:id', async (req, res) => {
   } catch (e) {
     console.error('stream failed:', id, e.stderr || e.message);
     urlCache.delete(id); // next attempt resolves a fresh URL
-    if (!res.headersSent) res.sendStatus(502);
+    if (!res.headersSent) res.status(502).type('text').send(String(e.message).slice(0, 600)); // reason visible to us when debugging
     else res.destroy();
   }
 });
