@@ -14,7 +14,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ID_RE = /^[\w-]{11}$/;
 
 // Render's IPs often get YouTube's "confirm you're not a bot" wall; exported cookies fix it.
-const ytOpts = {};
+// Several player clients: when YouTube challenges one (common on cloud IPs), yt-dlp falls back to the next.
+const ytOpts = {
+  extractorArgs: `youtube:player_client=${process.env.YTDLP_CLIENTS || 'default,tv,web_safari,mweb'}`,
+};
 if (process.env.YTDLP_COOKIES) {
   const file = path.join(process.env.TMPDIR || '/tmp', 'yt-cookies.txt');
   fs.writeFileSync(file, process.env.YTDLP_COOKIES);
