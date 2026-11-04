@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { getToken } from './auth';
 import { createStore } from './store';
-import { applyRoom, audio, leaveRoomPlayback, player, setRemote, type RoomState } from './player';
+import { applyRoom, audio, leaveRoomPlayback, player, setReadySender, setRemote, type RoomState } from './player';
 
 export const roomStore = createStore({
   code: null as string | null,
@@ -18,7 +18,7 @@ const serverNow = () => Date.now() + offset;
 // NTP-style: keep the sample with the lowest round trip.
 async function syncClock(s: Socket) {
   let best = Infinity;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 10; i++) {
     const t0 = Date.now();
     const server: number = await s.timeout(3000).emitWithAck('time').catch(() => NaN);
     const t1 = Date.now();
@@ -57,6 +57,7 @@ export function joinRoom(code: string, name: string) {
   });
 
   setRemote((a) => s.emit('control', a));
+  setReadySender((seq) => s.emit('ready', { seq }));
   clockTimer = setInterval(() => s.connected && syncClock(s), 30000);
 }
 
@@ -67,6 +68,7 @@ export function leaveRoom() {
   socket.disconnect();
   socket = null;
   setRemote(null);
+  setReadySender(null);
   leaveRoomPlayback();
   localStorage.removeItem('groove:room');
   roomStore.set({ code: null, members: [], connected: false });

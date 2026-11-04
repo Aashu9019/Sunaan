@@ -1,4 +1,4 @@
-# Groove
+# Sunaan
 
 Private music PWA for a small group. Search and stream from YouTube, build playlists, download songs for offline play, and listen together in sync.
 

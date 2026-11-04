@@ -1,4 +1,4 @@
-// One command to put Groove online from this PC: starts the server and a Cloudflare quick tunnel,
+// One command to put Sunaan online from this PC: starts the server and a Cloudflare quick tunnel,
 // then prints a public https link (also saved to share-url.txt). Ctrl+C stops both.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -39,7 +39,7 @@ const watch = (buf) => {
     shown = true;
     fs.writeFileSync(path.join(root, 'share-url.txt'), url + '\n');
     const key = /^GROUP_KEY=(.*)$/m.exec(fs.existsSync(path.join(root, '.env')) ? fs.readFileSync(path.join(root, '.env'), 'utf8') : '')?.[1];
-    console.log(`\n  Groove is live:  ${url}\n${key ? `  Group key:       ${key}\n` : ''}`);
+    console.log(`\n  Sunaan is live:  ${url}\n${key ? `  Group key:       ${key}\n` : ''}`);
   }
 };
 tunnel.stdout.on('data', watch);

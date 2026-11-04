@@ -23,6 +23,8 @@ export type RoomState = {
   paused: boolean;
   position: number;
   startedAt: number; // server epoch ms
+  waiting: boolean; // room is waiting for every phone to buffer
+  seq: number;
   members: string[];
 };
 
@@ -37,7 +39,36 @@ export const player = createStore({
   error: null as string | null,
   repeat: (localStorage.getItem('groove:repeat') || 'off') as 'off' | 'all' | 'one',
   shuffle: false,
+  autoplay: localStorage.getItem('groove:autoplay') !== 'off',
 });
+
+export function toggleAutoplay() {
+  const on = !player.get().autoplay;
+  localStorage.setItem('groove:autoplay', on ? 'on' : 'off');
+  player.set({ autoplay: on });
+}
+
+// Autoplay: when the queue runs out, append songs YouTube Music would play next.
+let extending: string | null = null;
+async function extendQueue() {
+  const { queue, index, autoplay } = player.get();
+  const cur = queue[index];
+  if (!cur || !autoplay || extending === cur.id) return false;
+  extending = cur.id;
+  try {
+    const res = await fetch(api(`/api/related/${cur.id}`));
+    const items: Track[] = res.ok ? await res.json() : [];
+    const have = new Set(player.get().queue.map((t) => t.id));
+    const more = items.filter((t) => !have.has(t.id)).slice(0, 15);
+    if (!more.length) return false;
+    player.set({ queue: [...player.get().queue, ...more] });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    extending = null;
+  }
+}
 
 export function cycleRepeat() {
   const next = ({ off: 'all', all: 'one', one: 'off' } as const)[player.get().repeat];
@@ -122,8 +153,10 @@ let remote: ((a: Action) => void) | null = null;
 export const setRemote = (r: typeof remote) => (remote = r);
 
 export function dispatch(a: Action) {
-  if (remote) remote(a);
-  else void local(a);
+  if (remote) {
+    if (a.type === 'pause') audio.pause(); // feel instant; the server confirms for everyone
+    remote(a);
+  } else void local(a);
 }
 
 async function startCurrent() {
@@ -158,12 +191,12 @@ async function local(a: Action) {
     }
     case 'next':
     case 'ended':
-      if (index < queue.length - 1) {
-        player.set({ index: index + 1 });
-        return startCurrent();
+      if (index >= queue.length - 1 && !(await extendQueue())) {
+        audio.pause();
+        return;
       }
-      audio.pause();
-      return;
+      player.set({ index: player.get().index + 1 });
+      return startCurrent();
     case 'prev':
       if (audio.currentTime > 3 || index === 0) audio.currentTime = 0;
       else {
@@ -189,10 +222,20 @@ async function local(a: Action) {
 }
 
 // ---------- room sync ----------
+//
+// The server holds one shared timeline. When a track starts or someone seeks, the room
+// "waits": every phone loads and buffers that spot, reports ready, and the server then
+// sets a start moment slightly in the future. Everyone starts at that exact moment
+// (clock offset measured in room.ts), then small drift is fixed by nudging speed.
 
 let room: RoomState | null = null;
 let serverNow = () => Date.now();
 let startTimer: ReturnType<typeof setTimeout> | undefined;
+let sendReady: ((seq: number) => void) | null = null;
+let readySent = -1;
+let lastSeek = 0;
+
+export const setReadySender = (f: typeof sendReady) => (sendReady = f);
 
 export function applyRoom(rs: RoomState, now: () => number) {
   room = rs;
@@ -203,11 +246,32 @@ export function applyRoom(rs: RoomState, now: () => number) {
 
 export function leaveRoomPlayback() {
   room = null;
+  readySent = -1;
   clearTimeout(startTimer);
   audio.playbackRate = 1;
 }
 
-const roomTarget = (rs: RoomState) => (rs.paused ? rs.position : (serverNow() - rs.startedAt) / 1000);
+// Where the shared timeline is right now, in seconds.
+const roomTarget = (rs: RoomState) =>
+  rs.paused || rs.waiting ? rs.position : (serverNow() - rs.startedAt) / 1000;
+
+function seekTo(t: number) {
+  if (Math.abs(audio.currentTime - t) < 0.05) return;
+  audio.currentTime = Math.max(0, t);
+  lastSeek = Date.now();
+}
+
+function whenBuffered() {
+  if (audio.readyState >= 3) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      audio.removeEventListener('canplay', done);
+      resolve();
+    };
+    audio.addEventListener('canplay', done);
+    setTimeout(done, 8000);
+  });
+}
 
 async function syncRoom() {
   const rs = room;
@@ -221,46 +285,68 @@ async function syncRoom() {
   await load(t);
   await whenReady();
   if (rs !== room) return;
-  const target = roomTarget(rs);
+
   if (rs.paused) {
     audio.pause();
     audio.playbackRate = 1;
-    if (Math.abs(audio.currentTime - target) > 0.3) audio.currentTime = target;
+    if (Math.abs(audio.currentTime - rs.position) > 0.3) seekTo(rs.position);
     return;
   }
-  if (target < 0) {
-    // scheduled start: wait so everyone begins together
+
+  if (rs.waiting) {
+    // park at the start spot, buffer it, tell the server we're ready
     audio.pause();
-    audio.currentTime = 0;
-    startTimer = setTimeout(syncRoom, -target * 1000);
+    audio.playbackRate = 1;
+    seekTo(rs.position);
+    await whenBuffered();
+    if (rs === room && readySent !== rs.seq) {
+      readySent = rs.seq;
+      sendReady?.(rs.seq);
+    }
     return;
   }
-  correctDrift(target);
+
+  // released: rs.position starts playing at this server time
+  const wait = rs.startedAt + rs.position * 1000 - serverNow();
+  if (wait > 15) {
+    audio.pause();
+    seekTo(rs.position);
+    startTimer = setTimeout(syncRoom, wait);
+    return;
+  }
+  const target = roomTarget(rs);
+  if (Math.abs(audio.currentTime - target) > 0.25) seekTo(target);
+  audio.playbackRate = 1;
   if (audio.paused) play();
 }
 
-// Big drift: jump. Small drift: nudge speed so it's inaudible.
+// Proportional speed nudge (inaudible) for small drift; a jump only for big drift,
+// and never again within a couple of seconds of the last jump (seeks need to settle).
 function correctDrift(target: number) {
+  if (Date.now() - lastSeek < 2500) return;
   const drift = audio.currentTime - target;
-  if (Math.abs(drift) > 1) {
-    audio.currentTime = target;
+  if (Math.abs(drift) > 0.6) {
+    seekTo(target + 0.12); // a seek costs ~100ms on phones
     audio.playbackRate = 1;
-  } else if (Math.abs(drift) > 0.05) audio.playbackRate = drift > 0 ? 0.96 : 1.04;
-  else audio.playbackRate = 1;
+  } else if (Math.abs(drift) > 0.03) {
+    audio.playbackRate = 1 - Math.max(-0.05, Math.min(0.05, drift * 0.3));
+  } else audio.playbackRate = 1;
 }
 
 setInterval(() => {
-  if (room && !room.paused && !audio.paused && !player.get().buffering) {
+  if (room && !room.paused && !room.waiting && !audio.paused && !player.get().buffering) {
     const target = roomTarget(room);
     if (target >= 0) correctDrift(target);
   }
-}, 1000);
+}, 500);
 
 // ---------- audio events ----------
 
 let lastPosition = 0;
 audio.addEventListener('timeupdate', () => {
   player.set({ time: audio.currentTime });
+  const p = player.get();
+  if (!room && p.index === p.queue.length - 1 && p.duration - audio.currentTime < 30) void extendQueue();
   // keeps the notification / lock screen seek bar in step
   if ('mediaSession' in navigator && Date.now() - lastPosition > 1000 && Number.isFinite(audio.duration)) {
     lastPosition = Date.now();
@@ -325,13 +411,6 @@ audio.addEventListener('playing', () => {
   if (player.get().error) player.set({ error: null });
 });
 
-// After a seek/rejoin while in a room, resync once data is available.
-audio.addEventListener('playing', () => {
-  if (room && !room.paused) {
-    const target = roomTarget(room);
-    if (target >= 0 && Math.abs(audio.currentTime - target) > 1) audio.currentTime = target;
-  }
-});
 
 // iOS only lets an <audio> play programmatically after one play() inside a user gesture.
 const silent = (() => {

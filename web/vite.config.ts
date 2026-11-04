@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['apple-touch-icon.png', 'icon.svg'],
       manifest: {
-        name: 'Groove',
-        short_name: 'Groove',
+        name: 'Sunaan',
+        short_name: 'Sunaan',
         description: 'Music with your people',
         theme_color: '#0d0d0f',
         background_color: '#0d0d0f',

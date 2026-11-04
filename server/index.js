@@ -145,6 +145,39 @@ async function musicSearch(q) {
     });
 }
 
+// Songs YouTube Music would play after this one ("radio"), used for autoplay.
+const relatedCache = new Map();
+async function related(id) {
+  const hit = relatedCache.get(id);
+  if (hit && Date.now() - hit.at < 6 * 3600e3) return hit.items;
+  const up = await (await music()).music.getUpNext(id, true);
+  const items = (up.contents ?? [])
+    .filter((v) => v.video_id && ID_RE.test(v.video_id) && v.video_id !== id && v.duration?.seconds)
+    .map((v) => {
+      const t = v.thumbnail?.[0]?.url || '';
+      return {
+        id: v.video_id,
+        title: v.title?.toString() || '',
+        artist: (v.artists ?? []).map((a) => a.name).join(', ') || v.author || '',
+        duration: v.duration.seconds,
+        thumb: t ? sized(t, 120) : thumb(v.video_id),
+        art: t ? sized(t, 544) : undefined,
+      };
+    });
+  relatedCache.set(id, { at: Date.now(), items });
+  return items;
+}
+
+app.get('/api/related/:id', async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.sendStatus(400);
+  try {
+    res.json(await related(req.params.id));
+  } catch (e) {
+    console.error('related failed:', e.message);
+    res.json([]);
+  }
+});
+
 app.get('/api/suggest', async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   if (!q) return res.json([]);
@@ -315,7 +348,11 @@ app.get('/api/stream/:id', async (req, res) => {
 // ---------- Rooms (group listening) ----------
 
 const rooms = new Map();
-const LEAD_MS = 800; // gives every client time to buffer before a track starts
+// Ready barrier: when a track starts or someone seeks, the room "waits" until every phone
+// reports it has buffered that spot (or WAIT_MAX passes), then all start LEAD_MS later together.
+// Without this, slow phones start late and spend the song jumping to catch up.
+const WAIT_MAX = 6000;
+const LEAD_MS = 350;
 
 // only accept artwork from YouTube's own image hosts
 const safeImg = (u) => (typeof u === 'string' && /^https:\/\/((lh3|yt3)\.googleusercontent\.com|i\.ytimg\.com)\//.test(u) ? u.slice(0, 500) : undefined);
@@ -333,18 +370,46 @@ const cleanTrack = (t) =>
     : null;
 const cleanQueue = (q) => (Array.isArray(q) ? q : []).slice(0, 500).map(cleanTrack).filter(Boolean);
 const clampIndex = (r, i) => Math.max(0, Math.min(r.queue.length - 1, Number(i) || 0));
-const position = (r) => (r.paused ? r.position : Math.max(0, (Date.now() - r.startedAt) / 1000));
+const position = (r) => (r.paused || r.waiting ? r.position : Math.max(0, (Date.now() - r.startedAt) / 1000));
 
-function startAt(r, index) {
+// Start (or resume after a seek) at `at` seconds once everyone is ready.
+function startAt(r, index, at = 0) {
   r.index = index;
-  r.position = 0;
+  r.position = at;
   r.paused = false;
-  r.startedAt = Date.now() + LEAD_MS;
+  r.seq = (r.seq || 0) + 1;
+  r.waiting = new Set(r.members.keys());
+  const seq = r.seq;
+  clearTimeout(r.waitTimer);
+  r.waitTimer = setTimeout(() => release(r, seq), WAIT_MAX);
+}
+
+function release(r, seq) {
+  if (r.seq !== seq || !r.waiting) return;
+  r.waiting = null;
+  r.startedAt = Date.now() + LEAD_MS - r.position * 1000;
+  broadcast(r);
 }
 
 function stop(r) {
   r.paused = true;
+  r.waiting = null;
   r.position = 0;
+}
+
+// End of queue: keep the music going with related songs, like Spotify autoplay.
+async function advance(r) {
+  if (r.index < r.queue.length - 1) return startAt(r, r.index + 1);
+  const cur = r.queue[r.index];
+  try {
+    const have = new Set(r.queue.map((t) => t.id));
+    const more = cur ? (await related(cur.id)).filter((t) => !have.has(t.id)).slice(0, 15) : [];
+    if (more.length && r.queue[r.index] === cur) {
+      r.queue.push(...cleanQueue(more));
+      return startAt(r, r.index + 1);
+    }
+  } catch {}
+  stop(r);
 }
 
 function snapshot(r) {
@@ -355,6 +420,8 @@ function snapshot(r) {
     paused: r.paused,
     position: r.position,
     startedAt: r.startedAt,
+    waiting: Boolean(r.waiting),
+    seq: r.seq || 0,
     members: [...r.members.values()],
   };
 }
@@ -384,26 +451,36 @@ io.on('connection', (socket) => {
     broadcast(r);
   });
 
-  socket.on('control', (a) => {
+  socket.on('ready', ({ seq } = {}) => {
+    const r = room;
+    if (!r?.waiting || seq !== r.seq) return;
+    r.waiting.delete(socket.id);
+    if (!r.waiting.size) release(r, r.seq);
+  });
+
+  socket.on('control', async (a) => {
     const r = room;
     if (!r || !a || typeof a.type !== 'string') return;
     switch (a.type) {
       case 'play':
+        // resume from pause: already buffered, so a short shared lead is enough
         if (r.paused && r.queue.length) {
           r.paused = false;
-          r.startedAt = Date.now() - r.position * 1000 + 300;
+          r.waiting = null;
+          r.startedAt = Date.now() + LEAD_MS - r.position * 1000;
         }
         break;
       case 'pause':
         if (!r.paused) {
           r.position = position(r);
           r.paused = true;
+          r.waiting = null;
         }
         break;
       case 'seek': {
         const t = Math.max(0, Number(a.time) || 0);
         if (r.paused) r.position = t;
-        else r.startedAt = Date.now() - t * 1000 + 300;
+        else startAt(r, r.index, t); // everyone buffers the new spot, then resumes together
         break;
       }
       case 'setQueue':
@@ -425,8 +502,7 @@ io.on('connection', (socket) => {
         if (r.queue.length) startAt(r, clampIndex(r, a.index));
         break;
       case 'next':
-        if (r.index < r.queue.length - 1) startAt(r, r.index + 1);
-        else stop(r);
+        await advance(r);
         break;
       case 'prev':
         if (position(r) > 3) startAt(r, r.index);
@@ -434,9 +510,10 @@ io.on('connection', (socket) => {
         break;
       case 'ended':
         // every client reports "ended"; only advance once per track
-        if (a.index !== r.index || r.paused || position(r) < 2) return;
-        if (r.index < r.queue.length - 1) startAt(r, r.index + 1);
-        else stop(r);
+        if (a.index !== r.index || r.paused || r.waiting || position(r) < 2) return;
+        r.position = 0;
+        r.waiting = new Set(); // block duplicate "ended" while related songs load
+        await advance(r);
         break;
       case 'enqueue': {
         const t = cleanTrack(a.track);
@@ -468,6 +545,7 @@ io.on('connection', (socket) => {
     room = null;
     socket.leave(r.code);
     r.members.delete(socket.id);
+    if (r.waiting?.delete(socket.id) && !r.waiting.size) release(r, r.seq);
     if (r.members.size) broadcast(r);
     else r.timer = setTimeout(() => rooms.delete(r.code), 30 * 60e3);
   }
@@ -484,4 +562,4 @@ if (fs.existsSync(dist)) {
   app.get(/^(?!\/api|\/socket\.io).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-http.listen(PORT, () => console.log(`groove server on http://localhost:${PORT}`));
+http.listen(PORT, () => console.log(`sunaan server on http://localhost:${PORT}`));

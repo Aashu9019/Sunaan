@@ -17,7 +17,7 @@ export default function Room() {
 
   async function share() {
     const url = `${location.origin}/?room=${code}`;
-    if (navigator.share) await navigator.share({ title: 'Groove', url }).catch(() => {});
+    if (navigator.share) await navigator.share({ title: 'Sunaan', url }).catch(() => {});
     else {
       await navigator.clipboard?.writeText(url);
       toast('Link copied');
