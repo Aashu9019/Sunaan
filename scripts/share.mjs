@@ -31,18 +31,43 @@ const startServer = () => {
 };
 startServer();
 
-const tunnel = spawn(exe, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${PORT}`]);
-let shown = false;
+// Quick tunnels sometimes die silently (network blip, sleep). Check every minute from the
+// outside; after 3 misses, open a fresh tunnel and re-announce it so /go keeps working.
+let tunnel;
+let current = '';
+const startTunnel = () => {
+  current = '';
+  tunnel = spawn(exe, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${PORT}`]);
+  tunnel.stdout.on('data', watch);
+  tunnel.stderr.on('data', watch);
+  tunnel.on('exit', () => !stopping && setTimeout(startTunnel, 2000));
+};
 const watch = (buf) => {
   const url = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(String(buf))?.[0];
-  if (url && !shown) {
-    shown = true;
+  if (url && !current) {
+    current = url;
     fs.writeFileSync(path.join(root, 'share-url.txt'), url + '\n');
     const key = /^GROUP_KEY=(.*)$/m.exec(fs.existsSync(path.join(root, '.env')) ? fs.readFileSync(path.join(root, '.env'), 'utf8') : '')?.[1];
-    console.log(`\n  Sunaan is live:  ${url}\n${key ? `  Group key:       ${key}\n` : ''}`);
+    console.log(`
+  Sunaan is live:  ${url}
+${key ? `  Group key:       ${key}
+` : ''}`);
     announce(url);
   }
 };
+let misses = 0;
+setInterval(async () => {
+  if (!current) return;
+  const ok = await fetch(`${current}/api/health`, { signal: AbortSignal.timeout(15000) }).then((r) => r.status < 500, () => false);
+  misses = ok ? 0 : misses + 1;
+  if (misses >= 3) {
+    misses = 0;
+    console.log('  Tunnel stopped answering, opening a new one...');
+    tunnel.kill(); // exit handler starts a new tunnel
+  }
+}, 60000);
+startTunnel();
+
 // Tell the Render instance where we are, so the APK and /go always find the current link.
 // Retries because Render's free plan may need ~a minute to wake up.
 async function announce(url) {
@@ -68,9 +93,6 @@ async function announce(url) {
   }
 }
 
-tunnel.stdout.on('data', watch);
-tunnel.stderr.on('data', watch);
-
 const stop = () => {
   stopping = true;
   server.kill();
@@ -79,4 +101,3 @@ const stop = () => {
 };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
-tunnel.on('exit', stop);
