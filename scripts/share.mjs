@@ -40,8 +40,34 @@ const watch = (buf) => {
     fs.writeFileSync(path.join(root, 'share-url.txt'), url + '\n');
     const key = /^GROUP_KEY=(.*)$/m.exec(fs.existsSync(path.join(root, '.env')) ? fs.readFileSync(path.join(root, '.env'), 'utf8') : '')?.[1];
     console.log(`\n  Sunaan is live:  ${url}\n${key ? `  Group key:       ${key}\n` : ''}`);
+    announce(url);
   }
 };
+// Tell the Render instance where we are, so the APK and /go always find the current link.
+// Retries because Render's free plan may need ~a minute to wake up.
+async function announce(url) {
+  const env = fs.existsSync(path.join(root, '.env')) ? fs.readFileSync(path.join(root, '.env'), 'utf8') : '';
+  const render = /^RENDER_URL=(.*)$/m.exec(env)?.[1]?.trim();
+  const key = /^GROUP_KEY=(.*)$/m.exec(env)?.[1]?.trim();
+  if (!render || !key) return;
+  for (let i = 0; i < 8; i++) {
+    try {
+      const r = await fetch(`${render}/api/where`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-group-key': key },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(70000),
+      });
+      if (r.ok) return console.log(`  Fixed link:      ${render}/go
+`);
+      console.log(`  Could not register with Render (HTTP ${r.status})`);
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+}
+
 tunnel.stdout.on('data', watch);
 tunnel.stderr.on('data', watch);
 

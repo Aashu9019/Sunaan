@@ -58,6 +58,29 @@ app.post('/api/unlock', (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => res.send('ok'));
+
+// ---------- Where is the music server right now? ----------
+// The PC's tunnel link changes on restart. The PC reports its link here (on Render, kept in Neon),
+// and the APK / browsers look it up: GET /api/where, or open /go to be redirected.
+let where = process.env.PUBLIC_URL || '';
+async function loadWhere() {
+  if (!pool) return where;
+  const { rows } = await pool.query("select value from kv where key = 'tunnel'").catch(() => ({ rows: [] }));
+  return rows[0]?.value || where;
+}
+app.get('/api/where', async (_req, res) => res.json({ url: await loadWhere() }));
+app.get('/go', async (_req, res) => {
+  const url = await loadWhere();
+  url ? res.redirect(302, url) : res.status(503).send('Music server is offline');
+});
+app.post('/api/where', async (req, res) => {
+  if (!GROUP_KEY || req.headers['x-group-key'] !== GROUP_KEY) return res.sendStatus(401);
+  const url = String(req.body?.url || '');
+  if (!/^https:\/\/[\w.-]+$/.test(url)) return res.sendStatus(400);
+  where = url;
+  await pool?.query("insert into kv (key, value) values ('tunnel', $1) on conflict (key) do update set value = $1", [url]);
+  res.sendStatus(204);
+});
 app.use('/api', (req, res, next) => (allowed(req.headers.cookie, req.query.t || req.headers['x-groove-token']) ? next() : res.sendStatus(401)));
 app.get('/api/me', (_req, res) => res.json({ ok: true, db: Boolean(pool), token: TOKEN }));
 io.use((socket, next) => (allowed(socket.handshake.headers.cookie, socket.handshake.auth?.t) ? next() : next(new Error('locked'))));
@@ -76,6 +99,7 @@ await pool?.query(`
     tracks jsonb not null,
     updated_at timestamptz not null default now()
   )`);
+await pool?.query('create table if not exists kv (key text primary key, value text not null)');
 
 const needDb = (req, res, next) => (pool ? next() : req.method === 'GET' ? res.json([]) : res.status(503).json({ error: 'DATABASE_URL not set' }));
 
