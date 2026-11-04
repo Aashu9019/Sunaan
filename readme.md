@@ -46,3 +46,17 @@ On Render's free plan the server sleeps after 15 minutes idle, and the first req
 
 - iOS can pause a PWA's audio after a long time on the lock screen, and can clear PWA storage if the app goes unused for weeks.
 - This is for private use. Streaming from YouTube this way is against YouTube's terms, so keep it within your group.
+
+## Android app (APK)
+
+The app lives in `app/` (Expo). Install link for your group: `https://<render-app>.onrender.com/go/sunaan.apk`
+(the PC serves `downloads/Sunaan.apk`).
+
+Building on Windows hits the 260-character path limit and needs ~8GB of free disk, so build from a short path:
+
+1. Copy `app/` to `F:\s`, run `npx expo prebuild --platform android` there.
+2. In `F:\s\android\app\build.gradle`, inside `android {`, add
+   `externalNativeBuild { cmake { buildStagingDirectory = file("F:/c") } }`.
+3. In `F:\s\android\gradle.properties` set `reactNativeArchitectures=arm64-v8a` and `org.gradle.jvmargs=-Xmx1536m`.
+4. With JDK 17: `gradlew assembleRelease -x lint` (set `GRADLE_USER_HOME` and `ANDROID_HOME` to a drive with space).
+5. Copy `app\build\outputs\apk\release\app-release.apk` to `downloads/Sunaan.apk`.
