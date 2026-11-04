@@ -75,7 +75,7 @@ export function ActionSheet() {
       <Animated.View entering={FadeIn} exiting={FadeOut} style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]}>
         <Pressable style={{ flex: 1 }} onPress={close} />
       </Animated.View>
-      <Animated.View entering={SlideInDown.springify().damping(20)} exiting={SlideOutDown.duration(200)} style={[st.sheetWrap, { paddingBottom: insets.bottom + 10 }]}>
+      <Animated.View entering={SlideInDown.duration(240)} exiting={SlideOutDown.duration(200)} style={[st.sheetWrap, { paddingBottom: insets.bottom + 10 }]}>
         <Glass strong radius={28} style={{ padding: 10 }}>
           <View style={st.head}>
             <Art uri={t.thumb} size={48} radius={10} />
@@ -131,7 +131,7 @@ export function Toast() {
   const insets = useSafeAreaInsets();
   if (!msg) return null;
   return (
-    <Animated.View key={msg} entering={FadeInUp.springify().damping(15)} exiting={FadeOut} pointerEvents="none" style={[st.toast, { top: insets.top + 10 }]}>
+    <Animated.View key={msg} entering={FadeInUp.duration(240)} exiting={FadeOut} pointerEvents="none" style={[st.toast, { top: insets.top + 10 }]}>
       <Glass strong radius={99} style={{ paddingHorizontal: 18, paddingVertical: 10 }}>
         <Text style={{ color: c.text, fontWeight: '600' }}>{msg}</Text>
       </Glass>

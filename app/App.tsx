@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActionSheet, AskModal, Toast } from './src/components/Overlays';
 import { FullPlayer, MiniPlayer } from './src/components/Player';
@@ -21,7 +21,7 @@ import Home from './src/screens/Home';
 import Library from './src/screens/Library';
 import Room from './src/screens/Room';
 import Search from './src/screens/Search';
-import { c, spring } from './src/theme';
+import { c } from './src/theme';
 
 const TABS: { id: 'home' | 'search' | 'library' | 'room'; icon: IconName; on: IconName }[] = [
   { id: 'home', icon: 'home-outline', on: 'home' },
@@ -82,7 +82,8 @@ function Ambient() {
   );
 }
 
-// All tabs stay mounted (keeps scroll position and search results); only the active one shows.
+// All tabs stay mounted (keeps scroll position and search results); hidden ones use display:none
+// so Android never routes touches or scrolls to them.
 function Screens() {
   const { tab } = ui.use();
   const insets = useSafeAreaInsets();
@@ -90,8 +91,8 @@ function Screens() {
   return (
     <View style={{ flex: 1, paddingTop: insets.top }}>
       {TABS.map(({ id }) => (
-        <View key={id} style={[StyleSheet.absoluteFill, { top: insets.top }, tab !== id && st.hidden]} pointerEvents={tab === id ? 'auto' : 'none'}>
-          {tab === id ? <Animated.View entering={FadeIn.duration(220)} style={{ flex: 1 }}>{screens[id]}</Animated.View> : screens[id]}
+        <View key={id} style={[{ flex: 1 }, tab !== id && st.hidden]}>
+          {screens[id]}
         </View>
       ))}
     </View>
@@ -104,10 +105,14 @@ function Dock() {
   const insets = useSafeAreaInsets();
   const [w, setW] = useState(0);
   const i = TABS.findIndex((x) => x.id === tab);
-  const pill = useAnimatedStyle(() => ({ transform: [{ translateX: withSpring((i * (w - 16)) / 4, spring) }] }), [i, w]);
+  const x = useSharedValue(0);
+  useEffect(() => {
+    x.value = withTiming((i * (w - 16)) / 4, { duration: 220, easing: Easing.out(Easing.cubic) });
+  }, [i, w]);
+  const pill = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
   return (
-    <View style={[st.dock, { bottom: insets.bottom + 10 }]} pointerEvents="box-none">
+    <View style={[st.dock, { bottom: Math.max(insets.bottom, 12) + 8 }]} pointerEvents="box-none">
       <MiniPlayer />
       <Glass strong radius={31} style={st.tabs}>
         <View style={{ flex: 1, flexDirection: 'row' }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
@@ -155,7 +160,7 @@ function Lock() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <Ambient />
-      <Animated.View entering={FadeIn.springify()} style={{ width: '100%', maxWidth: 360 }}>
+      <Animated.View entering={FadeIn.duration(240)} style={{ width: '100%', maxWidth: 360 }}>
         <Glass strong radius={28} style={{ padding: 24, gap: 14, alignItems: 'center' }}>
           <Text style={{ color: c.text, fontSize: 30, fontWeight: '800', letterSpacing: -0.6 }}>Sunaan</Text>
           <TextInput
@@ -182,9 +187,9 @@ function Lock() {
 }
 
 const st = StyleSheet.create({
-  hidden: { opacity: 0 },
+  hidden: { display: 'none' },
   dock: { position: 'absolute', left: 12, right: 12, gap: 8 },
-  tabs: { height: 62, alignSelf: 'center', width: 320, padding: 8 },
+  tabs: { height: 62, alignSelf: 'stretch', padding: 8 },
   tab: { flex: 1, height: 46, alignItems: 'center', justifyContent: 'center' },
   pill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.13)' },
   badge: { position: 'absolute', top: 10, right: '30%', width: 8, height: 8, borderRadius: 4, backgroundColor: c.accent },

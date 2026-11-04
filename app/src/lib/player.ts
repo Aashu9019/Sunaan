@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAudioPlaylist, requestNotificationPermissionsAsync, setAudioModeAsync, type AudioPlaylist, type AudioPlaylistStatus } from 'expo-audio';
 import { pushHistory } from './history';
 import { localUri } from './library';
-import { api, getJSON } from './server';
+import { api, getJSON, timedFetch } from './server';
+import { toast } from './ui';
 import { createStore } from './store';
 import { artOf, type Track } from './types';
 
@@ -84,9 +85,21 @@ function skipNative(index: number) {
   showTrack(player.get().queue[index]);
 }
 
+// The native player fails silently, so ask the server about streamed songs and say why if it can't.
+function checkStream(t: Track) {
+  if (localUri(t.id)) return;
+  timedFetch(api(`/api/stream/${t.id}`), { headers: { range: 'bytes=0-1' } }, 30000)
+    .then((r) => {
+      if (r.ok || player.get().queue[player.get().index]?.id !== t.id) return;
+      toast(r.status === 502 ? 'YouTube is blocking the server right now' : r.status === 401 ? 'Group key needed' : "Can't play this song");
+    })
+    .catch(() => {});
+}
+
 function showTrack(t?: Track) {
   if (!t) return;
   pushHistory(t);
+  checkStream(t);
   if (!lockScreenOn) {
     pl.setActiveForLockScreen(true, meta(t), { showNextTrack: true, showPreviousTrack: true });
     lockScreenOn = true;

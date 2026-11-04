@@ -35,14 +35,14 @@ export default function Home() {
 
   return (
     <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
-      <Animated.Text entering={FadeInDown.springify()} style={s.h1}>
+      <Animated.Text entering={FadeInDown.duration(240)} style={s.h1}>
         {greeting()}
       </Animated.Text>
 
       {quick.length > 0 && (
         <View style={s.quick}>
           {quick.map((q, i) => (
-            <Animated.View key={q.key} entering={FadeInDown.delay(i * 40).springify()} style={s.quickCell}>
+            <Animated.View key={q.key} entering={FadeInDown.delay(i * 40).duration(240)} style={s.quickCell}>
               <Tap
                 scale={0.96}
                 onPress={() => {
@@ -97,7 +97,7 @@ function Shelf({ title, items }: { title: string; items: Track[] | null }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.scroller} decelerationRate="fast" snapToInterval={162}>
         {items
           ? items.map((t, i) => (
-              <Animated.View key={t.id} entering={FadeInRight.delay(Math.min(i, 6) * 45).springify().damping(18)}>
+              <Animated.View key={t.id} entering={FadeInRight.delay(Math.min(i, 6) * 45).duration(240)}>
                 <Tap
                   scale={0.95}
                   style={s.card}

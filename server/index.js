@@ -20,6 +20,8 @@ const ID_RE = /^[\w-]{11}$/;
 // Several player clients: when YouTube challenges one (common on cloud IPs), yt-dlp falls back to the next.
 const ytOpts = {
   extractorArgs: `youtube:player_client=${process.env.YTDLP_CLIENTS || 'default,tv,web_safari'}`,
+  // Newer YouTube player JS must be solved to unlock full audio formats; node is already here.
+  jsRuntimes: `node:${process.execPath}`,
 };
 // Cookies come from YTDLP_COOKIES (Render) or a cookies.txt dropped in the project root (PC).
 const cookieFile = path.join(__dirname, '..', 'cookies.txt');
@@ -278,6 +280,7 @@ async function viaYtdlp(id) {
     noPlaylist: true,
     noWarnings: true,
     ...ytOpts,
+    ...(!ytOpts.cookies && fs.existsSync(cookieFile) ? { cookies: cookieFile } : {}),
   });
   return String(out).trim().split('\n')[0];
 }

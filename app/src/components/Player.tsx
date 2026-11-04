@@ -30,7 +30,7 @@ export function MiniPlayer() {
   const t = queue[index];
   if (!t) return null;
   return (
-    <Animated.View entering={FadeIn.springify()}>
+    <Animated.View entering={FadeIn.duration(240)}>
       <Tap scale={0.98} onPress={() => ui.set({ playerOpen: true })}>
         <Glass strong radius={22} style={st.mini}>
           <Art uri={t.thumb} size={44} radius={12} />
@@ -67,7 +67,7 @@ export function FullPlayer() {
   useEffect(() => {
     if (playerOpen) {
       setMounted(true);
-      y.value = withSpring(0, { damping: 22, stiffness: 200 });
+      y.value = withSpring(0, spring);
     } else y.value = withTiming(H, { duration: 260 }, (done) => done && runOnJS(setMounted)(false));
   }, [playerOpen]);
 
@@ -107,7 +107,7 @@ function PlayerBody({ onClose }: { onClose: () => void }) {
   const artScale = useSharedValue(playing ? 1 : 0.86);
 
   useEffect(() => {
-    artScale.value = withSpring(playing ? 1 : 0.86, { damping: 14, stiffness: 160 });
+    artScale.value = withSpring(playing ? 1 : 0.86, spring);
   }, [playing]);
   const artStyle = useAnimatedStyle(() => ({ transform: [{ scale: artScale.value }] }));
 
@@ -159,7 +159,7 @@ function PlayerBody({ onClose }: { onClose: () => void }) {
         />
       ) : (
         <View style={st.artWrap}>
-          <Animated.View key={t.id} entering={ZoomIn.springify().damping(16)} style={[artStyle, st.artShadow]}>
+          <Animated.View key={t.id} entering={ZoomIn.duration(240)} style={[artStyle, st.artShadow]}>
             <Art uri={artOf(t)} size={size} radius={24} />
           </Animated.View>
         </View>
@@ -190,7 +190,7 @@ function PlayerBody({ onClose }: { onClose: () => void }) {
           }}
         >
           <Glass radius={40} style={st.playBig}>
-            <Animated.View key={String(playing)} entering={ZoomIn.springify().damping(12)}>
+            <Animated.View key={String(playing)} entering={ZoomIn.duration(240)}>
               <Icon name={playing ? 'pause' : 'play'} size={36} />
             </Animated.View>
           </Glass>
@@ -223,7 +223,7 @@ function Like({ track }: { track: Track }) {
       }}
       style={{ padding: 8 }}
     >
-      <Animated.View key={pop} entering={pop ? ZoomIn.springify().damping(8) : undefined}>
+      <Animated.View key={pop} entering={pop ? ZoomIn.duration(240) : undefined}>
         <Icon name={liked ? 'heart' : 'heart-outline'} size={28} color={liked ? c.like : c.muted} />
       </Animated.View>
     </Tap>

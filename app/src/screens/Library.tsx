@@ -86,7 +86,7 @@ function Cover({ tracks, size, icon }: { tracks?: Track[]; size: number; icon?: 
 
 function Tile({ i, title, sub, tracks, icon, onPress }: { i: number; title: string; sub: string; tracks?: Track[]; icon?: string; onPress: () => void }) {
   return (
-    <Animated.View entering={FadeInDown.delay(i * 35).springify().damping(18)} style={st.tile}>
+    <Animated.View entering={FadeInDown.delay(i * 35).duration(240)} style={st.tile}>
       <Tap scale={0.96} onPress={onPress}>
         <Cover tracks={tracks} size={160} icon={icon} />
         <Text numberOfLines={1} style={st.tileTitle}>
@@ -106,7 +106,7 @@ function PlaylistView({ p, kind, onBack }: { p: Playlist; kind: 'mine' | 'group'
   const shared = group.some((g) => g.id === p.id);
 
   return (
-    <Animated.View entering={SlideInRight.springify().damping(20)} style={{ flex: 1 }}>
+    <Animated.View entering={SlideInRight.duration(240)} style={{ flex: 1 }}>
       <FlatList
         data={p.tracks}
         keyExtractor={(t, i) => t.id + i}

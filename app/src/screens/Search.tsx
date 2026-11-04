@@ -91,7 +91,7 @@ export default function Search() {
         </Glass>
 
         {focused && q.trim().length > 0 && suggestions.length > 0 && (
-          <Animated.View entering={FadeInDown.springify().damping(20)}>
+          <Animated.View entering={FadeInDown.duration(240)}>
             <Glass radius={18} style={{ marginTop: 8, padding: 6 }}>
               {suggestions.map((x) => (
                 <Tap key={x} scale={0.98} style={st.suggest} onPress={() => pick(x)}>

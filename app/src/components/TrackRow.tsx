@@ -18,7 +18,7 @@ function TrackRow({ track, i = 0, onPlay, playlist }: Props) {
   const more = () => ui.set({ sheet: { track, playlist, index: i } });
 
   return (
-    <Animated.View entering={FadeInDown.delay(Math.min(i, 12) * 28).springify().damping(18)} style={s.row}>
+    <Animated.View entering={FadeInDown.delay(Math.min(i, 12) * 28).duration(240)} style={s.row}>
       <Tap
         style={s.main}
         scale={0.97}

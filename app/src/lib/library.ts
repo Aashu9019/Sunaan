@@ -49,24 +49,40 @@ export function download(t: Track) {
   setProgress(t.id, 0);
   chain = chain.then(async () => {
     const target = `${SONGS}${t.id}.m4a`;
+    let why = 'try again';
     for (let attempt = 0; attempt < 2; attempt++) {
+      let stall: ReturnType<typeof setTimeout> | undefined;
       try {
         const job = FS.createDownloadResumable(api(`/api/stream/${t.id}`), target, {}, (p) => {
           if (p.totalBytesExpectedToWrite > 0) setProgress(t.id, p.totalBytesWritten / p.totalBytesExpectedToWrite);
+          kick();
         });
+        // Cancel if no bytes arrive for 45s, so one stuck song never blocks the rest of the queue.
+        const kick = () => {
+          clearTimeout(stall);
+          stall = setTimeout(() => job.cancelAsync().catch(() => {}), 45000);
+        };
+        kick();
         const res = await job.downloadAsync();
-        if (!res || res.status !== 200) throw new Error(`HTTP ${res?.status}`);
+        clearTimeout(stall);
+        if (!res || res.status !== 200) {
+          why = res?.status === 502 ? 'YouTube blocked it' : res?.status === 401 ? 'key needed' : 'server error';
+          throw new Error(`HTTP ${res?.status}`);
+        }
+        const info = await FS.getInfoAsync(target);
+        if (!info.exists || (info.size ?? 0) < 50000) throw new Error('empty file');
         library.set({ downloads: { ...library.get().downloads, [t.id]: t } });
         save();
         setProgress(t.id, null);
         toast(`Downloaded ${t.title}`);
         return;
       } catch {
+        clearTimeout(stall);
         await FS.deleteAsync(target, { idempotent: true }).catch(() => {});
       }
     }
     setProgress(t.id, null);
-    toast(`Download failed: ${t.title}`);
+    toast(`Download failed, ${why}`);
   });
 }
 

@@ -28,7 +28,7 @@ export default function Room() {
     return (
       <ScrollView contentContainerStyle={home.page}>
         <Text style={home.h1}>Together</Text>
-        <Animated.View entering={ZoomIn.springify().damping(16)}>
+        <Animated.View entering={ZoomIn.duration(240)}>
           <Glass style={st.codeBox}>
             <View style={[st.dot, connected && st.dotOk]} />
             <Text style={st.code}>{code}</Text>
@@ -47,7 +47,7 @@ export default function Room() {
         </Animated.View>
         <View style={st.members}>
           {members.map((m, i) => (
-            <Animated.View key={m + i} entering={FadeInDown.delay(i * 60).springify()} style={st.member}>
+            <Animated.View key={m + i} entering={FadeInDown.delay(i * 60).duration(240)} style={st.member}>
               <Glass radius={30} style={st.avatar}>
                 <Text style={{ color: c.accent, fontWeight: '800', fontSize: 19 }}>{m.slice(0, 1).toUpperCase()}</Text>
               </Glass>

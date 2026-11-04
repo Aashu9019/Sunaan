@@ -12,4 +12,5 @@ export const c = {
   fill: 'rgba(255,255,255,0.08)',
 };
 
-export const spring = { damping: 18, stiffness: 220, mass: 0.8 };
+// Critically damped: settles fast with no wobble, so it feels calm on slower phones too.
+export const spring = { damping: 30, stiffness: 320, mass: 1, overshootClamping: true };

@@ -20,17 +20,22 @@ export const Icon = ({ name, size = 22, color = c.text }: { name: IconName; size
   <Ionicons name={name} size={size} color={color} />
 );
 
+// Live blur is heavy on older Android GPUs, so below Android 12 glass is a solid tint.
+const BLUR = Platform.OS !== 'android' || (Platform.Version as number) >= 31;
+
 // Frosted glass: real blur on Android 12+, translucent fill elsewhere.
 export function Glass({ style, children, strong, radius = 24 }: { style?: StyleProp<ViewStyle>; children?: ReactNode; strong?: boolean; radius?: number }) {
   return (
     <View style={[{ borderRadius: radius, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: c.edge }, style]}>
-      <BlurView
-        intensity={strong ? 60 : 40}
-        tint="dark"
-        experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: strong ? c.glassStrong : c.glass }]} />
+      {BLUR && (
+        <BlurView
+          intensity={strong ? 60 : 40}
+          tint="dark"
+          experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: BLUR ? (strong ? c.glassStrong : c.glass) : strong ? 'rgba(30,30,36,0.94)' : 'rgba(40,40,48,0.7)' }]} />
       {children}
     </View>
   );
