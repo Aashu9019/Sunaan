@@ -75,10 +75,17 @@ async function loadWhere() {
   return rows[0]?.value || where;
 }
 app.get('/api/where', async (_req, res) => res.json({ url: await loadWhere() }));
-app.get('/go', async (_req, res) => {
+// /go and /go/<path>, e.g. /go/sunaan.apk
+app.get(/^\/go(\/.*)?$/, async (req, res) => {
   const url = await loadWhere();
-  url ? res.redirect(302, url) : res.status(503).send('Music server is offline');
+  url ? res.redirect(302, url + (req.params[0] || '')) : res.status(503).send('Music server is offline');
 });
+
+// The Android app, served from the PC (downloads/Sunaan.apk, not in git).
+const apk = path.join(__dirname, '..', 'downloads', 'Sunaan.apk');
+app.get('/sunaan.apk', (_req, res) =>
+  fs.existsSync(apk) ? res.download(apk, 'Sunaan.apk') : res.status(404).send('APK not built yet'),
+);
 app.post('/api/where', async (req, res) => {
   if (!GROUP_KEY || req.headers['x-group-key'] !== GROUP_KEY) return res.sendStatus(401);
   const url = String(req.body?.url || '');
