@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = process.env.PORT || '3001';
+const PORT = process.env.PORT || '4747';
 const exe = path.join(root, 'tools', process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
 
 if (!fs.existsSync(exe)) {

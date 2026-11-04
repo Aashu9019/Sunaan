@@ -4,13 +4,14 @@ import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import youtubedl from 'youtube-dl-exec';
 import pg from 'pg';
 import { Innertube } from 'youtubei.js';
 
-const PORT = Number(process.env.PORT) || 3001;
+const PORT = Number(process.env.PORT) || 4747;
 const GROUP_KEY = process.env.GROUP_KEY || '';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ID_RE = /^[\w-]{11}$/;
@@ -20,10 +21,15 @@ const ID_RE = /^[\w-]{11}$/;
 const ytOpts = {
   extractorArgs: `youtube:player_client=${process.env.YTDLP_CLIENTS || 'default,tv,web_safari'}`,
 };
+// Cookies come from YTDLP_COOKIES (Render) or a cookies.txt dropped in the project root (PC).
+const cookieFile = path.join(__dirname, '..', 'cookies.txt');
 if (process.env.YTDLP_COOKIES) {
-  const file = path.join(process.env.TMPDIR || '/tmp', 'yt-cookies.txt');
+  const file = path.join(os.tmpdir(), 'yt-cookies.txt');
   fs.writeFileSync(file, process.env.YTDLP_COOKIES);
   ytOpts.cookies = file;
+} else if (fs.existsSync(cookieFile)) {
+  ytOpts.cookies = cookieFile;
+  console.log('using cookies.txt for YouTube');
 }
 
 const app = express();
