@@ -1,8 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createStore } from './store';
 
-// The music server runs on a PC behind a tunnel whose link changes on restart.
-// The PC reports its current link to this always-on address, and the app looks it up.
+// The music server runs on Render. Its free plan sleeps when idle and takes ~a minute to wake.
 export const LOOKUP = 'https://groove-qcee.onrender.com';
 
 type Status = 'init' | 'finding' | 'ok' | 'offline' | 'locked';
@@ -30,7 +29,7 @@ export async function getJSON<T>(path: string, fallback: T, ms = 10000): Promise
 }
 
 const healthy = (base: string) =>
-  timedFetch(`${base}/api/health`, {}, 4000)
+  timedFetch(`${base}/api/health`, {}, 75000)
     .then((r) => r.ok)
     .catch(() => false);
 
@@ -46,22 +45,12 @@ export function connect() {
 }
 
 async function doConnect() {
-  let { base } = conn.get();
-  if (!base || !(await healthy(base))) {
-    conn.set({ status: 'finding' });
-    try {
-      // Render's free plan can take ~a minute to wake up
-      const r = await timedFetch(`${LOOKUP}/api/where`, {}, 75000);
-      const { url } = (await r.json()) as { url?: string };
-      base = url && (await healthy(url)) ? url : '';
-    } catch {
-      base = '';
-    }
-  }
-  if (!base) return conn.set({ status: 'offline' });
+  const base = LOOKUP;
+  conn.set({ status: 'finding' });
+  if (!(await healthy(base))) return conn.set({ status: 'offline' });
   await AsyncStorage.setItem('sunaan:base', base);
   conn.set({ base });
-  const me = await timedFetch(api('/api/me')).catch(() => null);
+  const me = await timedFetch(api('/api/me'), {}, 30000).catch(() => null);
   if (!me) return conn.set({ status: 'offline' });
   conn.set({ status: me.status === 401 ? 'locked' : 'ok' });
 }

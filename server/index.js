@@ -72,6 +72,8 @@ app.get('/api/health', (_req, res) => res.send('ok'));
 // and the APK / browsers look it up: GET /api/where, or open /go to be redirected.
 let where = process.env.PUBLIC_URL || '';
 async function loadWhere() {
+  // Render-only: this server is the music server, so old tunnel links are ignored. Render sets this variable.
+  if (process.env.RENDER_EXTERNAL_URL) return process.env.RENDER_EXTERNAL_URL;
   if (!pool) return where;
   const { rows } = await pool.query("select value from kv where key = 'tunnel'").catch(() => ({ rows: [] }));
   return rows[0]?.value || where;
