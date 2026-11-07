@@ -147,6 +147,31 @@ await pool?.query(`
   )`);
 await pool?.query('create table if not exists kv (key text primary key, value text not null)');
 
+// YouTube rotates cookies as they are used; yt-dlp writes the fresh ones back to the cookie file.
+// Render wipes that file on restart, so the fresh copy is kept in Neon and used on boot,
+// unless YTDLP_COOKIES itself was changed since (then the new paste wins).
+const kvSet = (key, value) => pool?.query('insert into kv (key, value) values ($1, $2) on conflict (key) do update set value = $2', [key, value]).catch(() => {});
+const envHash = process.env.YTDLP_COOKIES ? crypto.createHash('sha256').update(process.env.YTDLP_COOKIES).digest('hex') : '';
+let lastSaved = '';
+if (pool && envHash && ytOpts.cookies) {
+  const { rows } = await pool.query("select key, value from kv where key in ('yt_cookies', 'yt_cookies_src')").catch(() => ({ rows: [] }));
+  const saved = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  if (saved.yt_cookies_src === envHash && saved.yt_cookies) {
+    fs.writeFileSync(ytOpts.cookies, saved.yt_cookies);
+    lastSaved = saved.yt_cookies;
+    cookieInfo.source = 'saved';
+  } else await kvSet('yt_cookies_src', envHash);
+}
+async function saveCookies() {
+  if (!pool || !envHash || !ytOpts.cookies) return;
+  const text = fs.readFileSync(ytOpts.cookies, 'utf8');
+  if (text === lastSaved || !text.includes('	')) return;
+  lastSaved = text;
+  await kvSet('yt_cookies', text);
+}
+// Use the session every few hours even when nobody listens, so it stays fresh and gets rotated.
+setInterval(() => viaYtdlp('jNQXAC9IVRw').catch(() => {}), 4 * 3600e3);
+
 const needDb = (req, res, next) => (pool ? next() : req.method === 'GET' ? res.json([]) : res.status(503).json({ error: 'DATABASE_URL not set' }));
 
 app.get('/api/group/playlists', needDb, async (_req, res) => {
@@ -305,6 +330,14 @@ app.get('/api/search', async (req, res) => {
 // Direct googlevideo URLs expire after ~6h and are tied to this server's IP,
 // so we resolve once, cache, and proxy the bytes (with Range support for seeking).
 async function viaYtdlp(id, clients) {
+  try {
+    return await ytdlpUrl(id, clients);
+  } finally {
+    saveCookies().catch(() => {});
+  }
+}
+
+async function ytdlpUrl(id, clients) {
   const out = await youtubedl(`https://www.youtube.com/watch?v=${id}`, {
     getUrl: true,
     format: 'bestaudio[ext=m4a]/bestaudio',
@@ -331,7 +364,10 @@ async function findUrl(id) {
     try {
       const url = await get(id);
       const probe = await fetch(url, { headers: { range: 'bytes=1048576-1048577' } });
-      if (probe.ok || probe.status === 416) return url; // 416 = song under 1MB
+      if (probe.ok || probe.status === 416) {
+        cookieInfo.lastOk = new Date().toISOString();
+        return url; // 416 = song under 1MB
+      }
       errors.push(`${name}: HTTP ${probe.status}`);
     } catch (e) {
       errors.push(`${name}: ${String(e.stderr || e.message).split('\n').filter(Boolean).pop()?.slice(0, 160)}`);
