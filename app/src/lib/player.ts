@@ -96,10 +96,20 @@ function checkStream(t: Track) {
     .catch(() => {});
 }
 
+// The server needs ~30s to unlock a song it has not seen, so ask it to start on the next ones
+// while this one plays. With autoplay, fetch the up-next list early so there is a next song to warm.
+function prepareNext(again = true) {
+  const { queue, index } = player.get();
+  const next = queue.slice(index + 1, index + 3).filter((t) => !localUri(t.id));
+  if (next.length) fetch(api(`/api/prepare?ids=${next.map((t) => t.id).join(',')}`)).catch(() => {});
+  else if (again && !room && index === queue.length - 1) void extendQueue().then((ok) => ok && prepareNext(false));
+}
+
 function showTrack(t?: Track) {
   if (!t) return;
   pushHistory(t);
   checkStream(t);
+  prepareNext();
   if (!lockScreenOn) {
     pl.setActiveForLockScreen(true, meta(t), { showNextTrack: true, showPreviousTrack: true });
     lockScreenOn = true;

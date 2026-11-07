@@ -116,7 +116,18 @@ async function load(t: Track) {
   player.set({ time: 0, duration: t.duration, error: null });
   setMediaSession(t);
   pushHistory(t);
+  prepareNext();
 }
+
+// The server needs ~30s to unlock a song it has not seen, so ask it to start on the next ones
+// while this one plays. With autoplay, fetch the up-next list early so there is a next song to warm.
+function prepareNext(again = true) {
+  const { queue, index } = player.get();
+  const next = queue.slice(index + 1, index + 3);
+  if (next.length) fetch(api(`/api/prepare?ids=${next.map((t) => t.id).join(',')}`)).catch(() => {});
+  else if (again && !room && index === queue.length - 1) void extendQueue().then((ok) => ok && prepareNext(false));
+}
+
 
 function whenReady() {
   if (audio.readyState >= 1) return Promise.resolve();

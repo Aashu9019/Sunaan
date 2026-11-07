@@ -376,14 +376,46 @@ async function findUrl(id) {
   throw new Error(errors.join(' | '));
 }
 
-function resolveUrl(id) {
+// yt-dlp needs ~30s of CPU per song on Render's free plan and a lot of memory, so run one at a
+// time. Songs someone is waiting on jump the line; prefetches for upcoming songs wait behind them.
+const jobs = [];
+let busy = false;
+function pump() {
+  if (busy || !jobs.length) return;
+  const job = jobs.shift();
+  busy = true;
+  findUrl(job.id)
+    .then(job.resolve, job.reject)
+    .finally(() => {
+      busy = false;
+      pump();
+    });
+}
+
+function resolveUrl(id, urgent = true) {
   const c = urlCache.get(id);
-  if (c && Date.now() - c.at < 3 * 3600e3) return c.p;
-  const p = findUrl(id);
+  if (c && Date.now() - c.at < 3 * 3600e3) {
+    // Someone is now waiting for a song that was only prefetched: move it to the front.
+    const i = urgent ? jobs.findIndex((j) => j.id === id) : -1;
+    if (i > 0) jobs.unshift(...jobs.splice(i, 1));
+    return c.p;
+  }
+  const p = new Promise((resolve, reject) => {
+    const job = { id, resolve, reject };
+    urgent ? jobs.unshift(job) : jobs.push(job);
+  });
   urlCache.set(id, { at: Date.now(), p });
   p.catch(() => urlCache.delete(id));
+  pump();
   return p;
 }
+
+// Warm up songs that will play soon (next in queue), so pressing next starts at once.
+app.get('/api/prepare', (req, res) => {
+  const ids = String(req.query.ids || '').split(',').filter((x) => /^[\w-]{11}$/.test(x)).slice(0, 3);
+  ids.forEach((id) => resolveUrl(id, false).catch(() => {}));
+  res.sendStatus(204);
+});
 
 // googlevideo throttles large single requests to roughly realtime, so never ask for more than CHUNK at once.
 // Ranges past the end of the file get 403 from googlevideo, so clamp to the known size.
