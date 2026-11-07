@@ -354,15 +354,26 @@ setInterval(() => {
 // ---------- audio events ----------
 
 let lastPosition = 0;
+// YouTube audio is fragmented MP4, and some players (Safari especially) read it as about twice
+// as long, then play silence after the real end. Trust YouTube's length when the two disagree.
+const metaLen = () => player.get().queue[player.get().index]?.duration || 0;
+const tooLong = () => metaLen() > 0 && Number.isFinite(audio.duration) && audio.duration > metaLen() * 1.25;
+const realDuration = () => (tooLong() ? metaLen() : audio.duration);
+let fakeEndFor = '';
 audio.addEventListener('timeupdate', () => {
   player.set({ time: audio.currentTime });
   const p = player.get();
+  const id = p.queue[p.index]?.id || '';
+  if (tooLong() && audio.currentTime >= metaLen() + 1 && fakeEndFor !== id) {
+    fakeEndFor = id;
+    return onEnded();
+  }
   if (!room && p.index === p.queue.length - 1 && p.duration - audio.currentTime < 30) void extendQueue();
   // keeps the notification / lock screen seek bar in step
   if ('mediaSession' in navigator && Date.now() - lastPosition > 1000 && Number.isFinite(audio.duration)) {
     lastPosition = Date.now();
     try {
-      navigator.mediaSession.setPositionState({ duration: audio.duration, position: Math.min(audio.currentTime, audio.duration), playbackRate: 1 });
+      navigator.mediaSession.setPositionState({ duration: realDuration(), position: Math.min(audio.currentTime, realDuration()), playbackRate: 1 });
     } catch {}
   }
 });
@@ -372,21 +383,22 @@ const setPlaybackState = (s: MediaSessionPlaybackState) => {
 audio.addEventListener('play', () => setPlaybackState('playing'));
 audio.addEventListener('pause', () => setPlaybackState('paused'));
 audio.addEventListener('durationchange', () => {
-  if (Number.isFinite(audio.duration)) player.set({ duration: audio.duration });
+  if (Number.isFinite(audio.duration)) player.set({ duration: realDuration() });
 });
 audio.addEventListener('play', () => player.set({ playing: true }));
 audio.addEventListener('pause', () => player.set({ playing: false }));
 audio.addEventListener('waiting', () => player.set({ buffering: true }));
 audio.addEventListener('playing', () => player.set({ buffering: false }));
 audio.addEventListener('canplay', () => player.set({ buffering: false }));
-audio.addEventListener('ended', () => {
+audio.addEventListener('ended', () => onEnded());
+function onEnded() {
   const { repeat, index, queue } = player.get();
   if (repeat === 'one') {
     dispatch({ type: 'seek', time: 0 });
     if (!remote) play();
   } else if (repeat === 'all' && index >= queue.length - 1 && queue.length) dispatch({ type: 'playIndex', index: 0 });
   else dispatch({ type: 'ended', index });
-});
+}
 // Streams can fail transiently (server waking up, expired YouTube URL). Retry quietly from the
 // same position before telling the user anything.
 let retries = 0;

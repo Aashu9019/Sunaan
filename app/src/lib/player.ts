@@ -123,12 +123,26 @@ function appendNative(tracks: Track[]) {
 
 // ---------- status from native ----------
 
+let fakeEndFor = '';
 function onStatus(s: AudioPlaylistStatus) {
   const { queue, index } = player.get();
+  // YouTube audio is fragmented MP4 and some players read it as ~twice as long, then play silence.
+  // Trust YouTube's length when they disagree, and move on when the real song is over.
+  const meta = queue[index]?.duration || 0;
+  const tooLong = meta > 0 && s.duration > meta * 1.25;
+  if (tooLong && s.currentTime >= meta + 1 && fakeEndFor !== queue[index]?.id) {
+    fakeEndFor = queue[index]?.id || '';
+    if (player.get().repeat === 'one') dispatch({ type: 'seek', time: 0 });
+    else if (room) remote?.({ type: 'ended', index });
+    else if (index < queue.length - 1) dispatch({ type: 'next' });
+    else if (player.get().autoplay) void extendQueue().then((ok) => ok && dispatch({ type: 'playIndex', index: index + 1 }));
+    else dispatch({ type: 'pause' });
+    return;
+  }
   player.set({
     playing: s.playing,
     time: s.currentTime,
-    duration: s.duration || queue[index]?.duration || 0,
+    duration: tooLong ? meta : s.duration || meta,
     buffering: s.isBuffering,
   });
   // autoplay: fetch more songs before the last one ends so the native player never runs dry
