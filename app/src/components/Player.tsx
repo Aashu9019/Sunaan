@@ -239,18 +239,27 @@ function Seek({ time, duration, buffering }: { time: number; duration: number; b
   const frac = duration ? Math.min(1, shown / duration) : 0;
 
   const toTime = (x: number) => Math.max(0, Math.min(1, x / w)) * duration;
+  // Tap jumps straight to that spot; drag scrubs. They are separate gestures because a
+  // quick tap never activates a pan on Android.
   const pan = Gesture.Pan()
-    .minDistance(0)
-    .onBegin((e) => {
-      active.value = withSpring(1, spring);
+    .activeOffsetX([-3, 3])
+    .onStart((e) => {
+      active.value = withTiming(1, { duration: 120 });
       runOnJS(setScrub)(toTime(e.x));
     })
     .onUpdate((e) => runOnJS(setScrub)(toTime(e.x)))
-    .onFinalize((e) => {
-      active.value = withSpring(0, spring);
-      runOnJS(commit)(toTime(e.x));
+    .onEnd((e) => runOnJS(commit)(toTime(e.x)))
+    .onFinalize(() => {
+      active.value = withTiming(0, { duration: 160 });
     });
+  const tap = Gesture.Tap()
+    .maxDuration(600)
+    .onEnd((e, ok) => {
+      if (ok) runOnJS(commit)(toTime(e.x));
+    });
+  const seek = Gesture.Exclusive(pan, tap);
   function commit(t: number) {
+    setScrub(t);
     dispatch({ type: 'seek', time: t });
     setTimeout(() => setScrub(null), 400);
   }
@@ -258,7 +267,7 @@ function Seek({ time, duration, buffering }: { time: number; duration: number; b
 
   return (
     <View>
-      <GestureDetector gesture={pan}>
+      <GestureDetector gesture={seek}>
         <View style={{ height: 30, justifyContent: 'center' }} onLayout={(e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width)}>
           <Animated.View style={[st.seekTrack, track, buffering && { opacity: 0.6 }]}>
             <View style={[st.seekFill, { width: `${frac * 100}%` }]} />

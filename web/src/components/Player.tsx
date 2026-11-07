@@ -50,6 +50,7 @@ export function FullPlayer({ onClose }: { onClose: () => void }) {
   const { queue, index, playing, time, duration, buffering, needsTap, error, repeat, shuffle } = player.use();
   const { code, members } = roomStore.use();
   const [scrub, setScrub] = useState<number | null>(null);
+  const scrubRef = useRef<number | null>(null);
   const [showQueue, setShowQueue] = useState(false);
   const sheet = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
@@ -92,9 +93,19 @@ export function FullPlayer({ onClose }: { onClose: () => void }) {
 
   if (!t) return null;
   const shown = scrub ?? time;
+  // Read the value from a ref: on a tap, pointerup arrives before React has re-rendered with it.
+  const setS = (v: number | null) => {
+    scrubRef.current = v;
+    setScrub(v);
+  };
   const commit = () => {
-    if (scrub != null) dispatch({ type: 'seek', time: scrub });
-    setScrub(null);
+    if (scrubRef.current != null) dispatch({ type: 'seek', time: scrubRef.current });
+    setS(null);
+  };
+  // iOS Safari ignores taps on range inputs, so place the thumb where the finger lands ourselves.
+  const tapTo = (e: React.PointerEvent<HTMLInputElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setS(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (duration || 0));
   };
 
   return (
@@ -155,8 +166,10 @@ export function FullPlayer({ onClose }: { onClose: () => void }) {
         step={0.1}
         value={Math.min(shown, duration || 1)}
         style={{ '--p': `${duration ? (shown / duration) * 100 : 0}%` } as React.CSSProperties}
-        onChange={(e) => setScrub(Number(e.target.value))}
+        onChange={(e) => setS(Number(e.target.value))}
+        onPointerDown={tapTo}
         onPointerUp={commit}
+        onPointerCancel={commit}
         onKeyUp={commit}
       />
       <div className="times">
