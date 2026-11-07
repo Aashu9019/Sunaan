@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createStore } from './store';
 
 // The music server runs on Render. Its free plan sleeps when idle and takes ~a minute to wake.
-export const LOOKUP = 'https://groove-qcee.onrender.com';
+export const LOOKUP = 'https://groove-0flt.onrender.com';
 
 type Status = 'init' | 'finding' | 'ok' | 'offline' | 'locked';
 export const conn = createStore({ base: '', token: '', status: 'init' as Status });
