@@ -304,7 +304,7 @@ app.get('/api/search', async (req, res) => {
 
 // Direct googlevideo URLs expire after ~6h and are tied to this server's IP,
 // so we resolve once, cache, and proxy the bytes (with Range support for seeking).
-async function viaYtdlp(id) {
+async function viaYtdlp(id, clients) {
   const out = await youtubedl(`https://www.youtube.com/watch?v=${id}`, {
     getUrl: true,
     format: 'bestaudio[ext=m4a]/bestaudio',
@@ -312,13 +312,18 @@ async function viaYtdlp(id) {
     noWarnings: true,
     ...ytOpts,
     ...(!ytOpts.cookies && fs.existsSync(cookieFile) ? { cookies: cookieFile } : {}),
+    ...(clients ? { extractorArgs: `youtube:player_client=${clients}` } : {}),
   });
   return String(out).trim().split('\n')[0];
 }
 
 // YouTube Music / iOS client URLs only serve the first ~1MB without a PO token, so yt-dlp
 // is the one method that returns full songs. Kept as a list so more can be added.
-const METHODS = [['yt-dlp', viaYtdlp]];
+// Each YouTube client is challenged differently, especially on cloud IPs, so try a few in turn.
+const METHODS = [
+  ['yt-dlp', (id) => viaYtdlp(id)],
+  ...['web', 'mweb', 'web_creator', 'tv_simply', 'web_embedded'].map((c) => [`yt-dlp ${c}`, (id) => viaYtdlp(id, c)]),
+];
 
 async function findUrl(id) {
   const errors = [];
