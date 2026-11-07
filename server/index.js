@@ -411,6 +411,21 @@ async function upstream(id, start, end) {
   return up;
 }
 
+// Diagnostics (group key required): how long each YouTube client takes for one song.
+app.get('/api/probe/:id', async (req, res) => {
+  const out = {};
+  for (const c of String(req.query.c || 'default').split(',')) {
+    const t = Date.now();
+    try {
+      await ytdlpUrl(req.params.id, c === 'default' ? undefined : c);
+      out[c] = `ok ${Date.now() - t}ms`;
+    } catch (e) {
+      out[c] = `fail ${Date.now() - t}ms ${String(e.stderr || e.message).split('\n').filter(Boolean).pop()?.slice(0, 80)}`;
+    }
+  }
+  res.json(out);
+});
+
 app.get('/api/stream/:id', async (req, res) => {
   const { id } = req.params;
   if (!ID_RE.test(id)) return res.sendStatus(400);
