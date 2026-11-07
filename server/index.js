@@ -25,10 +25,37 @@ const ytOpts = {
 };
 // Cookies come from YTDLP_COOKIES (Render) or a cookies.txt dropped in the project root (PC).
 const cookieFile = path.join(__dirname, '..', 'cookies.txt');
+// Accepts a real cookies.txt, one whose tabs/newlines got flattened to spaces by a web form,
+// or a raw "name=value; name2=value2" Cookie header copied from DevTools. Always writes Netscape format.
+function toNetscape(raw) {
+  const text = raw.replace(/\r/g, '').trim();
+  const rows = [];
+  if (/\t/.test(text) && /\n/.test(text)) {
+    for (const line of text.split('\n')) {
+      const f = line.split('\t');
+      if (f.length >= 7 && (!line.startsWith('#') || line.startsWith('#HttpOnly_'))) rows.push(f.slice(0, 7));
+    }
+  } else if (/\s(TRUE|FALSE)\s+\S+\s+(TRUE|FALSE)\s+\d+\s/.test(text)) {
+    const re = /(#HttpOnly_)?(\.?[\w.-]+\.\w+)\s+(TRUE|FALSE)\s+(\S+)\s+(TRUE|FALSE)\s+(\d+)\s+(\S+)\s+(\S+)/g;
+    for (const m of text.matchAll(re)) rows.push([(m[1] || '') + m[2], m[3], m[4], m[5], m[6], m[7], m[8]]);
+  } else {
+    const exp = String(Math.floor(Date.now() / 1000) + 31536000);
+    for (const part of text.replace(/^cookie:\s*/i, '').split(/;\s*/)) {
+      const i = part.indexOf('=');
+      if (i > 0) rows.push(['.youtube.com', 'TRUE', '/', 'TRUE', exp, part.slice(0, i).trim(), part.slice(i + 1).trim()]);
+    }
+  }
+  return rows;
+}
+let cookieInfo = { source: 'none', count: 0, signedIn: false };
 if (process.env.YTDLP_COOKIES) {
+  const rows = toNetscape(process.env.YTDLP_COOKIES);
   const file = path.join(os.tmpdir(), 'yt-cookies.txt');
-  fs.writeFileSync(file, process.env.YTDLP_COOKIES);
+  fs.writeFileSync(file, '# Netscape HTTP Cookie File\n' + rows.map((r) => r.join('\t')).join('\n') + '\n');
   ytOpts.cookies = file;
+  const names = rows.map((r) => r[5]);
+  cookieInfo = { source: 'env', count: rows.length, signedIn: names.some((n) => /SAPISID|__Secure-3PSID$/.test(n)) };
+  console.log('YouTube cookies:', cookieInfo);
 } else if (fs.existsSync(cookieFile)) {
   ytOpts.cookies = cookieFile;
   console.log('using cookies.txt for YouTube');
@@ -66,6 +93,8 @@ app.post('/api/unlock', (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => res.send('ok'));
+// Cookie diagnostics without exposing any values: how many were read and whether they look signed in.
+app.get('/api/cookies', (_req, res) => res.json(cookieInfo));
 
 // ---------- Where is the music server right now? ----------
 // The PC's tunnel link changes on restart. The PC reports its link here (on Render, kept in Neon),
